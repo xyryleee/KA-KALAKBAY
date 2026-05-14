@@ -69,6 +69,46 @@
   --red:        #D55E00;
 }
 
+:root.kk-large-text {
+  font-size: 112%;
+}
+
+:root.kk-high-contrast {
+  --cyan: #00D5FF;
+  --cyan-dark: #005F73;
+}
+
+:root.kk-high-contrast body {
+  color: #000000;
+}
+
+:root.kk-high-contrast .stat-card,
+:root.kk-high-contrast .journey-card,
+:root.kk-high-contrast .j-card,
+:root.kk-high-contrast .j-card-visited,
+:root.kk-high-contrast .settings-row,
+:root.kk-high-contrast .sw-row,
+:root.kk-high-contrast .profile-card,
+:root.kk-high-contrast .apo-fact-card {
+  border-color: #000000 !important;
+}
+
+:root.kk-high-contrast .camera-status-pill,
+:root.kk-high-contrast .destination-panel,
+:root.kk-high-contrast .top-panel {
+  background: rgba(2, 8, 16, 0.94) !important;
+  color: #ffffff !important;
+}
+
+:root.kk-reduced-motion *,
+:root.kk-reduced-motion *::before,
+:root.kk-reduced-motion *::after {
+  animation-duration: 0.001ms !important;
+  animation-iteration-count: 1 !important;
+  transition-duration: 0.001ms !important;
+  scroll-behavior: auto !important;
+}
+
 /* ─── RESET ─────────────────────────────────────────── */
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 html {

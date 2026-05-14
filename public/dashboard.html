@@ -922,10 +922,16 @@
 
     @media (prefers-reduced-motion: reduce) {
       .reveal-up {
-        opacity: 1;
-        transform: none;
-        animation: none;
+        opacity: 1 !important;
+        transform: none !important;
+        animation: none !important;
       }
+    }
+
+    :root.kk-reduced-motion .reveal-up {
+      opacity: 1 !important;
+      transform: none !important;
+      animation: none !important;
     }
 
     #landmark-list,
@@ -1289,11 +1295,41 @@
         </div>
 
         <!-- Colorblind Mode toggle -->
-        <div class="sw-row" style="margin-bottom:1.5rem;">
+        <div class="sw-row">
           <div class="sw-icon" style="background:rgba(0,144,173,.1);">👁</div>
           <span class="sw-label">Colorblind Mode</span>
           <label class="sw" aria-label="Toggle colorblind mode">
             <input type="checkbox" id="cb-sw"/>
+            <div class="sw-track"></div>
+          </label>
+        </div>
+
+        <!-- Larger Text toggle -->
+        <div class="sw-row">
+          <div class="sw-icon" style="background:rgba(0,144,173,.1);">Aa</div>
+          <span class="sw-label">Larger Text</span>
+          <label class="sw" aria-label="Toggle larger text">
+            <input type="checkbox" id="largeTextToggle"/>
+            <div class="sw-track"></div>
+          </label>
+        </div>
+
+        <!-- High Contrast toggle -->
+        <div class="sw-row">
+          <div class="sw-icon" style="background:rgba(0,144,173,.1);">HC</div>
+          <span class="sw-label">High Contrast</span>
+          <label class="sw" aria-label="Toggle high contrast">
+            <input type="checkbox" id="highContrastToggle"/>
+            <div class="sw-track"></div>
+          </label>
+        </div>
+
+        <!-- Reduce Motion toggle -->
+        <div class="sw-row" style="margin-bottom:1.5rem;">
+          <div class="sw-icon" style="background:rgba(0,144,173,.1);">RM</div>
+          <span class="sw-label">Reduce Motion</span>
+          <label class="sw" aria-label="Toggle reduced motion">
+            <input type="checkbox" id="reducedMotionToggle"/>
             <div class="sw-track"></div>
           </label>
         </div>
@@ -1399,4 +1435,3 @@
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 </body>
 </html>
-

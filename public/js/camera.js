@@ -7,6 +7,7 @@ import {
   setDoc
 } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
 import {
+  applyAccessibilitySettings,
   hideAppLoader,
   installLoaderFailsafe,
   setLoaderText,
@@ -70,7 +71,15 @@ const state = {
   selectedLandmark: null,
   toastTimer: null,
   watchId: null,
-  achievementUnlocked: false
+  achievementUnlocked: false,
+  miniMap: null,
+  miniMapUserMarker: null,
+  miniMapLandmarkMarker: null,
+  miniMapRouteLine: null,
+  miniMapAccuracyCircle: null,
+  lastMiniMapUpdate: 0,
+  userHeading: 0,
+  miniMapHeadingStarted: false
 };
 
 function cacheDOM() {
@@ -91,6 +100,7 @@ function cacheDOM() {
   DOM.locationARStatus = document.getElementById("locationARStatus");
   DOM.captureBtn = document.getElementById("captureBtn");
   DOM.infoBtn = document.getElementById("infoBtn");
+  DOM.ttsBtn = document.getElementById("ttsBtn");
   DOM.infoPanel = document.getElementById("infoPanel");
   DOM.panelName = document.getElementById("panelName");
   DOM.panelCat = document.getElementById("panelCat");
@@ -99,6 +109,8 @@ function cacheDOM() {
   DOM.panelMapLink = document.getElementById("panelMapLink");
   DOM.panelClose = document.getElementById("panelClose");
   DOM.toast = document.getElementById("toast");
+  DOM.cameraMiniMapWrap = document.getElementById("cameraMiniMapWrap");
+  DOM.cameraMiniMap = document.getElementById("cameraMiniMap");
   DOM.loadingScreen = document.getElementById("loadingScreen");
   DOM.loadingFill = document.getElementById("loadingFill");
   DOM.loadingText = document.getElementById("loadingText");
@@ -505,6 +517,7 @@ function showMissingSelectionState() {
   DOM.missingSelection?.classList.add("show");
   DOM.hud?.classList.remove("active");
   DOM.bottomBar?.classList.remove("active");
+  setCameraMiniMapVisible(false);
 }
 
 function showCameraError(message) {
@@ -628,6 +641,306 @@ function updateGPSAccuracyUI() {
     DOM.gpsStatus.textContent = poor
       ? "GPS accuracy is weak"
       : "GPS ready";
+  }
+}
+
+function buildLandmarkSpeechText() {
+  const lm = state.selectedLandmark;
+
+  if (!lm) {
+    return "No landmark selected.";
+  }
+
+  const name = lm.name || "Selected landmark";
+  const history =
+    lm.history ||
+    lm.desc ||
+    "No history is available for this landmark.";
+  const description =
+    lm.description ||
+    lm.desc ||
+    "No description is available for this landmark.";
+
+  return `${name}. History. ${history}. Description. ${description}`;
+}
+
+function stopLandmarkSpeech() {
+  if (!("speechSynthesis" in window)) return;
+
+  window.speechSynthesis.cancel();
+
+  const btn = DOM.ttsBtn || document.getElementById("ttsBtn");
+  btn?.classList.remove("is-speaking");
+  btn?.setAttribute("aria-label", "Listen to landmark information");
+}
+
+function speakLandmarkInfo() {
+  if (!("speechSynthesis" in window)) {
+    showToast("Text-to-speech is not supported on this browser.");
+    return;
+  }
+
+  const btn = DOM.ttsBtn || document.getElementById("ttsBtn");
+
+  if (window.speechSynthesis.speaking) {
+    stopLandmarkSpeech();
+    return;
+  }
+
+  const text = buildLandmarkSpeechText();
+  const utterance = new SpeechSynthesisUtterance(text);
+
+  utterance.lang = "en-US";
+  utterance.rate = 0.92;
+  utterance.pitch = 1;
+  utterance.volume = 1;
+
+  utterance.onstart = () => {
+    btn?.classList.add("is-speaking");
+    btn?.setAttribute("aria-label", "Stop landmark narration");
+  };
+
+  utterance.onend = () => {
+    btn?.classList.remove("is-speaking");
+    btn?.setAttribute("aria-label", "Listen to landmark information");
+  };
+
+  utterance.onerror = () => {
+    btn?.classList.remove("is-speaking");
+    btn?.setAttribute("aria-label", "Listen to landmark information");
+  };
+
+  window.speechSynthesis.cancel();
+  window.speechSynthesis.speak(utterance);
+}
+
+function showARSafetyModalIfNeeded() {
+  const modal = document.getElementById("arSafetyModal");
+  const acceptBtn = document.getElementById("acceptSafetyBtn");
+  const dontShow = document.getElementById("dontShowSafetyAgain");
+
+  if (!modal || !acceptBtn) return;
+
+  const alreadySeen = localStorage.getItem("kk_ar_safety_seen") === "true";
+
+  if (alreadySeen) return;
+
+  modal.classList.add("show");
+  modal.setAttribute("aria-hidden", "false");
+  document.body.style.overflow = "hidden";
+
+  acceptBtn.addEventListener(
+    "click",
+    () => {
+      if (dontShow?.checked) {
+        localStorage.setItem("kk_ar_safety_seen", "true");
+      }
+
+      modal.classList.remove("show");
+      modal.setAttribute("aria-hidden", "true");
+      document.body.style.overflow = "";
+    },
+    { once: true }
+  );
+}
+
+function setCameraMiniMapVisible(isVisible) {
+  const wrap = document.getElementById("cameraMiniMapWrap");
+  if (!wrap) return;
+
+  wrap.classList.toggle("is-hidden", !isVisible);
+}
+
+function initCameraMiniMap() {
+  const mapEl = document.getElementById("cameraMiniMap");
+
+  if (!mapEl) {
+    console.warn("[CAMERA MINIMAP] Minimap element not found.");
+    return;
+  }
+
+  if (!window.L) {
+    console.warn("[CAMERA MINIMAP] Leaflet is not loaded.");
+    return;
+  }
+
+  if (state.miniMap) {
+    if (state.miniMapRouteLine) {
+      state.miniMap.removeLayer(state.miniMapRouteLine);
+      state.miniMapRouteLine = null;
+    }
+
+    setTimeout(() => state.miniMap.invalidateSize(), 100);
+    return;
+  }
+
+  const fallbackLat = Number(state.selectedLandmark?.lat) || 14.838913747987208;
+  const fallbackLng = Number(state.selectedLandmark?.lng) || 120.28433529417792;
+
+  state.miniMap = L.map(mapEl, {
+    zoomControl: false,
+    attributionControl: false,
+    dragging: false,
+    scrollWheelZoom: false,
+    doubleClickZoom: false,
+    boxZoom: false,
+    keyboard: false,
+    tap: false,
+    touchZoom: false
+  }).setView([fallbackLat, fallbackLng], 18);
+
+  L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+    maxZoom: 19,
+    crossOrigin: true
+  }).addTo(state.miniMap);
+
+  const landmarkLat = Number(state.selectedLandmark?.lat);
+  const landmarkLng = Number(state.selectedLandmark?.lng);
+
+  if (Number.isFinite(landmarkLat) && Number.isFinite(landmarkLng)) {
+    state.miniMapLandmarkMarker = L.marker([landmarkLat, landmarkLng], {
+      icon: createMiniMapLandmarkIcon()
+    }).addTo(state.miniMap);
+  }
+
+  setTimeout(() => {
+    state.miniMap?.invalidateSize();
+  }, 250);
+
+  console.log("[CAMERA MINIMAP] Initialized.");
+}
+
+function createMiniMapUserIcon(heading = 0) {
+  return L.divIcon({
+    className: "",
+    html: `
+      <div
+        class="camera-minimap-user-marker"
+        style="transform: rotate(${Number(heading) || 0}deg);"
+      ></div>
+    `,
+    iconSize: [22, 22],
+    iconAnchor: [11, 11]
+  });
+}
+
+function createMiniMapLandmarkIcon() {
+  return L.divIcon({
+    className: "",
+    html: `<div class="camera-minimap-landmark-marker"></div>`,
+    iconSize: [22, 22],
+    iconAnchor: [11, 11]
+  });
+}
+
+function updateCameraMiniMap() {
+  if (!state.miniMap || !state.selectedLandmark || !state.location) return;
+
+  const now = Date.now();
+
+  // Avoid excessive map updates.
+  if (now - state.lastMiniMapUpdate < 800) return;
+  state.lastMiniMapUpdate = now;
+
+  const userLat = Number(state.location.lat);
+  const userLng = Number(state.location.lng);
+  const landmarkLat = Number(state.selectedLandmark.lat);
+  const landmarkLng = Number(state.selectedLandmark.lng);
+
+  if (
+    !Number.isFinite(userLat) ||
+    !Number.isFinite(userLng) ||
+    !Number.isFinite(landmarkLat) ||
+    !Number.isFinite(landmarkLng)
+  ) {
+    console.warn("[CAMERA MINIMAP] Invalid coordinates.", {
+      userLat,
+      userLng,
+      landmarkLat,
+      landmarkLng
+    });
+    return;
+  }
+
+  const userLatLng = [userLat, userLng];
+  const landmarkLatLng = [landmarkLat, landmarkLng];
+
+  if (state.miniMapRouteLine) {
+    state.miniMap.removeLayer(state.miniMapRouteLine);
+    state.miniMapRouteLine = null;
+  }
+
+  if (!state.miniMapUserMarker) {
+    state.miniMapUserMarker = L.marker(userLatLng, {
+      icon: createMiniMapUserIcon(state.userHeading)
+    }).addTo(state.miniMap);
+  } else {
+    state.miniMapUserMarker
+      .setLatLng(userLatLng)
+      .setIcon(createMiniMapUserIcon(state.userHeading));
+  }
+
+  if (!state.miniMapLandmarkMarker) {
+    state.miniMapLandmarkMarker = L.marker(landmarkLatLng, {
+      icon: createMiniMapLandmarkIcon()
+    }).addTo(state.miniMap);
+  } else {
+    state.miniMapLandmarkMarker.setLatLng(landmarkLatLng);
+  }
+
+  if (state.miniMapAccuracyCircle) {
+    state.miniMapAccuracyCircle.setLatLng(userLatLng);
+    state.miniMapAccuracyCircle.setRadius(Number(state.location.accuracy) || 8);
+  } else {
+    state.miniMapAccuracyCircle = L.circle(userLatLng, {
+      radius: Number(state.location.accuracy) || 8,
+      color: "#27667B",
+      weight: 1,
+      fillColor: "#00B4D8",
+      fillOpacity: 0.12
+    }).addTo(state.miniMap);
+  }
+
+  const bounds = L.latLngBounds([userLatLng, landmarkLatLng]).pad(0.45);
+
+  if (bounds.isValid()) {
+    state.miniMap.fitBounds(bounds, {
+      animate: true,
+      duration: 0.25,
+      maxZoom: 18
+    });
+  } else {
+    state.miniMap.setView(userLatLng, 18);
+  }
+
+  console.log("[CAMERA MINIMAP] Marker-only update.", {
+    userLatLng,
+    landmarkLatLng,
+    accuracy: state.location.accuracy,
+    distanceM: state.distanceM
+  });
+}
+
+function startMiniMapHeadingWatcher() {
+  if (state.miniMapHeadingStarted) return;
+
+  function handleOrientation(event) {
+    const heading =
+      event.webkitCompassHeading ||
+      (event.alpha != null ? 360 - event.alpha : null);
+
+    if (Number.isFinite(heading)) {
+      state.userHeading = heading;
+    }
+  }
+
+  try {
+    window.addEventListener("deviceorientationabsolute", handleOrientation, true);
+    window.addEventListener("deviceorientation", handleOrientation, true);
+    state.miniMapHeadingStarted = true;
+    console.log("[CAMERA MINIMAP] Heading watcher started.");
+  } catch (error) {
+    console.warn("[CAMERA MINIMAP] Heading watcher failed:", error);
   }
 }
 
@@ -1109,6 +1422,7 @@ function startGPSWatcher() {
       setLoadingStep("gps", "done");
       updateGeofenceState();
       updateGPSAccuracyUI();
+      updateCameraMiniMap();
       hideLoadingScreen();
     },
     (error) => {
@@ -1413,6 +1727,7 @@ async function handleCapture() {
 }
 
 function goBack() {
+  stopLandmarkSpeech();
   stopGPSWatcher();
   stopCamera();
   window.history.back();
@@ -1465,6 +1780,10 @@ function bindEvents() {
   });
   DOM.panelClose?.addEventListener("click", closeInfoPanel);
   DOM.captureBtn?.addEventListener("click", handleCapture);
+  DOM.ttsBtn?.addEventListener("click", speakLandmarkInfo);
+  DOM.cameraMiniMapWrap?.addEventListener("click", () => {
+    showToast("Mini map shows your location and the landmark.");
+  });
   DOM.retryBtn?.addEventListener("click", () => window.location.reload());
   DOM.loadingStartBtn?.addEventListener("click", () => {
     hideLoadingStartButton();
@@ -1473,9 +1792,14 @@ function bindEvents() {
 
   window.addEventListener("beforeunload", stopGPSWatcher);
   window.addEventListener("beforeunload", stopCamera);
+  window.addEventListener("beforeunload", stopLandmarkSpeech);
 
   document.addEventListener("visibilitychange", () => {
-    if (document.hidden) return;
+    if (document.hidden) {
+      stopLandmarkSpeech();
+      return;
+    }
+
     updateTopBarMetrics();
   });
 }
@@ -1498,6 +1822,7 @@ async function initCameraPage() {
     showAppLoader("Loading selected landmark");
 
     cacheDOM();
+    applyAccessibilitySettings();
     registerBillboardComponent();
     applyReadableARPlacementFromURL();
     logARCalibrationStatus();
@@ -1537,12 +1862,18 @@ async function initCameraPage() {
     setLoadingProgress(42, "Preparing location AR");
     updateStaticLandmarkUI();
     updateTopBarMetrics();
+    showARSafetyModalIfNeeded();
 
     buildLocationARContent(state.selectedLandmark);
     updateLocationARAnchor(state.selectedLandmark);
 
     DOM.hud?.classList.add("active");
     DOM.bottomBar?.classList.add("active");
+
+    setCameraMiniMapVisible(Boolean(state.selectedLandmark));
+    initCameraMiniMap();
+    startMiniMapHeadingWatcher();
+    updateCameraMiniMap();
 
     showNavigationUI();
 

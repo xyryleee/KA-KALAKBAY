@@ -22,6 +22,16 @@ export function applySettings() {
     document.documentElement.classList.add("dark");
   if (localStorage.getItem("kk_cb")   === "1")
     document.documentElement.classList.add("cb");
+
+  applyAccessibilitySettings();
+}
+
+export function applyAccessibilitySettings() {
+  const root = document.documentElement;
+
+  root.classList.toggle("kk-large-text", localStorage.getItem("kk_large_text") === "true");
+  root.classList.toggle("kk-high-contrast", localStorage.getItem("kk_high_contrast") === "true");
+  root.classList.toggle("kk-reduced-motion", localStorage.getItem("kk_reduced_motion") === "true");
 }
 
 export function setLoaderText(message = "Loading KA-KALAKBAY") {

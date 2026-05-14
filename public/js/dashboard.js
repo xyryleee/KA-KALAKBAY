@@ -5,7 +5,7 @@ import {
   doc, updateDoc, getDoc, serverTimestamp, setDoc,
 } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
 import {
-  applySettings, showToast, setLoading,
+  applyAccessibilitySettings, applySettings, showToast, setLoading,
   toggleDark, toggleCB, isDark, isCB,
   hideAppLoader, showAppLoader, installLoaderFailsafe, setLoaderText,
 } from "./app.js";
@@ -13,6 +13,7 @@ import { APO_FACTS } from "./apo-facts.js";
 import { getAllLandmarks } from "./landmark-service.js";
 
 applySettings();
+applyAccessibilitySettings();
 installLoaderFailsafe(10000);
 setLoaderText("Loading your Lakbay");
 
@@ -432,25 +433,44 @@ function renderAchievements() {
   updateAchievementStats();
 }
 
-function applyDashboardRevealAnimations() {
+function applyDashboardRevealAnimations(scope = document) {
   const selectors = [
     ".greeting-band",
+    ".apo-fact-title",
     "#apoFactCard",
     "#tab-home .stat-card",
     "#tab-home [data-section='journey']",
     "#journey-cards",
     "#map-mini",
     "#landmark-list",
-    "#tab-profile > div"
+
+    "#tab-profile > div > div:first-child",
+    "#tab-profile > div > h3",
+    "#tab-profile .profile-card",
+    "#tab-profile .settings-section",
+    "#tab-profile .settings-section h2",
+    "#tab-profile .settings-row",
+    "#tab-profile .sw-row",
+    "#tab-profile .profile-section",
+    "#tab-profile .settings-card",
+    "#tab-profile .reset-section",
+    "#tab-profile .signout-section",
+    "#tab-profile #reset-btn",
+    "#tab-profile #signout-btn"
   ];
 
   const elements = selectors
-    .flatMap((selector) => Array.from(document.querySelectorAll(selector)))
+    .flatMap((selector) => Array.from(scope.querySelectorAll(selector)))
     .filter(Boolean);
 
-  elements.forEach((el, index) => {
+  const uniqueElements = [...new Set(elements)].filter((el) => {
+    const panel = el.closest(".tab-panel");
+    return !panel || panel.classList.contains("active");
+  });
+
+  uniqueElements.forEach((el, index) => {
     el.classList.remove("reveal-up");
-    el.style.animationDelay = `${Math.min(index * 0.07, 0.35)}s`;
+    el.style.animationDelay = `${Math.min(index * 0.06, 0.42)}s`;
 
     requestAnimationFrame(() => {
       el.classList.add("reveal-up");
@@ -492,7 +512,9 @@ window.switchTab = function(tab) {
   }
 
   if (tab === "profile") {
-    applyDashboardRevealAnimations();
+    requestAnimationFrame(() => {
+      applyDashboardRevealAnimations(document.getElementById("tab-profile") || document);
+    });
   }
 };
 
@@ -527,6 +549,38 @@ document.getElementById("cb-sw").addEventListener("change", async () => {
   const on = toggleCB();
   if (currentUser) try { await updateDoc(doc(db,"users",currentUser.uid),{"preferences.colorblindMode":on}); } catch{}
 });
+
+function initAccessibilitySettingsUI() {
+  const largeTextToggle = document.getElementById("largeTextToggle");
+  const highContrastToggle = document.getElementById("highContrastToggle");
+  const reducedMotionToggle = document.getElementById("reducedMotionToggle");
+
+  if (largeTextToggle) {
+    largeTextToggle.checked = localStorage.getItem("kk_large_text") === "true";
+    largeTextToggle.addEventListener("change", () => {
+      localStorage.setItem("kk_large_text", String(largeTextToggle.checked));
+      applyAccessibilitySettings();
+    });
+  }
+
+  if (highContrastToggle) {
+    highContrastToggle.checked = localStorage.getItem("kk_high_contrast") === "true";
+    highContrastToggle.addEventListener("change", () => {
+      localStorage.setItem("kk_high_contrast", String(highContrastToggle.checked));
+      applyAccessibilitySettings();
+    });
+  }
+
+  if (reducedMotionToggle) {
+    reducedMotionToggle.checked = localStorage.getItem("kk_reduced_motion") === "true";
+    reducedMotionToggle.addEventListener("change", () => {
+      localStorage.setItem("kk_reduced_motion", String(reducedMotionToggle.checked));
+      applyAccessibilitySettings();
+    });
+  }
+}
+
+initAccessibilitySettingsUI();
 
 /* ════════════════════════════════════════════════
    RESET ACCOUNT PROGRESS
