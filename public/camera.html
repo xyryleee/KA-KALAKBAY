@@ -1,0 +1,685 @@
+﻿<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, user-scalable=no" />
+  <title>KA-KALAKBAY AR Camera</title>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;700;800;900&display=swap" rel="stylesheet">
+  <script src="https://aframe.io/releases/1.3.0/aframe.min.js"></script>
+  <script src="https://raw.githack.com/AR-js-org/AR.js/master/aframe/build/aframe-ar.js"></script>
+  <style>
+    :root {
+      --deep: #0A1628;
+      --teal: #27667B;
+      --cyan: #00B4D8;
+      --lime: #DDEB9D;
+      --white: #F7FBFF;
+      --safe-top: env(safe-area-inset-top, 0px);
+      --safe-bottom: env(safe-area-inset-bottom, 0px);
+      --safe-left: env(safe-area-inset-left, 0px);
+      --safe-right: env(safe-area-inset-right, 0px);
+    }
+
+    *,
+    *::before,
+    *::after {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    html,
+    body {
+      width: 100%;
+      height: 100%;
+      min-height: 100dvh;
+      overflow: hidden;
+      background: #000;
+      color: var(--white);
+      font-family: "DM Sans", "Segoe UI", Arial, sans-serif;
+      -webkit-text-size-adjust: 100%;
+    }
+
+    button,
+    input,
+    textarea,
+    select {
+      font: inherit;
+      font-family: "DM Sans", "Segoe UI", Arial, sans-serif;
+    }
+
+    button,
+    a[role="button"] {
+      min-width: 44px;
+      min-height: 44px;
+      touch-action: manipulation;
+    }
+
+    img,
+    video,
+    canvas,
+    svg {
+      max-width: 100%;
+    }
+
+    #fallbackBackdrop,
+    #camVideo,
+    #locationSceneHost,
+    #hud {
+      position: fixed;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      min-height: 100dvh;
+    }
+
+    #fallbackBackdrop {
+      z-index: 0;
+      background:
+        radial-gradient(circle at 50% 34%, rgba(0, 180, 216, 0.2), transparent 30%),
+        linear-gradient(180deg, #08131F 0%, #02070D 62%, #00131C 100%);
+    }
+
+    #camVideo {
+      z-index: 1;
+      display: block;
+      visibility: visible;
+      object-fit: cover;
+      background: transparent;
+    }
+
+    #locationSceneHost {
+      z-index: 2;
+      overflow: hidden;
+      background: transparent;
+    }
+
+    #locationSceneHost a-scene,
+    #locationSceneHost canvas,
+    #locationSceneHost video {
+      position: fixed !important;
+      inset: 0 !important;
+      width: 100% !important;
+      height: 100% !important;
+      object-fit: cover !important;
+      background: transparent !important;
+    }
+
+    #captureCanvas {
+      display: none;
+    }
+
+    #hud {
+      z-index: 10;
+      display: none;
+      pointer-events: none;
+    }
+
+    #hud.active {
+      display: block;
+    }
+
+    .topbar {
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      z-index: 20;
+      display: flex;
+      gap: 12px;
+      align-items: flex-start;
+      padding: calc(12px + var(--safe-top)) max(16px, var(--safe-right)) 14px max(16px, var(--safe-left));
+      border-radius: 0 0 22px 22px;
+      border-bottom: 2px solid rgba(0, 180, 216, 0.35);
+      background: linear-gradient(140deg, rgba(39, 102, 123, 0.96), rgba(10, 22, 40, 0.94));
+      box-shadow: 0 12px 28px rgba(0, 0, 0, 0.26);
+      backdrop-filter: blur(14px);
+      pointer-events: none;
+    }
+
+    .back-btn {
+      flex: 0 0 auto;
+      display: inline-grid;
+      place-items: center;
+      width: 44px;
+      height: 44px;
+      border-radius: 15px;
+      border: 1px solid rgba(255, 255, 255, 0.24);
+      background: rgba(39, 102, 123, 0.9);
+      color: #fff;
+      text-decoration: none;
+      box-shadow: 0 8px 22px rgba(0, 0, 0, 0.25);
+      pointer-events: all;
+    }
+
+    .nav-card {
+      flex: 1 1 auto;
+      min-width: 0;
+      max-width: 840px;
+    }
+
+    .nav-eyebrow {
+      color: rgba(255, 255, 255, 0.68);
+      font-size: 0.58rem;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+    }
+
+    #navDestination {
+      margin-top: 2px;
+      color: #fff;
+      font-size: clamp(1.08rem, 4.8vw, 1.65rem);
+      line-height: 1.08;
+      font-weight: 900;
+      overflow-wrap: anywhere;
+    }
+
+    .nav-bottom-row {
+      margin-top: 10px;
+      display: grid;
+      gap: 8px;
+    }
+
+    .nav-metrics {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 8px;
+    }
+
+    .metric {
+      min-width: 0;
+      border-radius: 14px;
+      padding: 8px 10px;
+      background: rgba(255, 255, 255, 0.12);
+    }
+
+    .metric span {
+      display: block;
+      color: rgba(255, 255, 255, 0.62);
+      font-size: 0.62rem;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+    }
+
+    .metric strong {
+      display: block;
+      margin-top: 2px;
+      color: #fff;
+      font-size: clamp(.82rem, 3.6vw, 1.02rem);
+      line-height: 1.1;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    #locationStatus {
+      color: var(--lime);
+    }
+
+    #locationARStatus {
+      position: fixed;
+      left: max(14px, var(--safe-left));
+      right: max(14px, var(--safe-right));
+      bottom: calc(104px + var(--safe-bottom));
+      z-index: 18;
+      max-width: 620px;
+      margin: 0 auto;
+      padding: 13px 15px;
+      border: 1px solid rgba(0, 180, 216, 0.28);
+      border-radius: 18px;
+      background: rgba(10, 22, 40, 0.82);
+      box-shadow: 0 10px 32px rgba(0, 0, 0, 0.32);
+      backdrop-filter: blur(14px);
+      color: #fff;
+      font-size: 0.88rem;
+      font-weight: 800;
+      text-align: center;
+      pointer-events: none;
+      overflow-wrap: anywhere;
+    }
+
+    #locationARStatus[data-state="ready"] {
+      border-color: rgba(221, 235, 157, 0.75);
+      background: rgba(39, 102, 123, 0.86);
+    }
+
+    #locationARStatus[data-state="found"] {
+      border-color: rgba(221, 235, 157, 0.9);
+      background: linear-gradient(135deg, rgba(39, 102, 123, 0.95), rgba(0, 180, 216, 0.8));
+    }
+
+    #bottomBar {
+      position: fixed;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      z-index: 25;
+      height: 104px;
+      display: none;
+      justify-content: center;
+      align-items: end;
+      gap: 14px;
+      padding: 0 max(22px, var(--safe-right)) calc(14px + var(--safe-bottom)) max(22px, var(--safe-left));
+      background: linear-gradient(to top, rgba(10, 22, 40, 0.9), rgba(10, 22, 40, 0.06));
+      pointer-events: all;
+    }
+
+    #bottomBar.active {
+      display: flex;
+    }
+
+    .hud-btn,
+    #captureBtn {
+      display: grid;
+      place-items: center;
+      border-radius: 999px;
+      color: #fff;
+      cursor: pointer;
+    }
+
+    .hud-btn {
+      width: 48px;
+      height: 48px;
+      border: 1px solid rgba(255, 255, 255, 0.22);
+      background: rgba(255, 255, 255, 0.12);
+      font-weight: 900;
+    }
+
+    #captureBtn {
+      width: 74px;
+      height: 74px;
+      border: 2px solid rgba(255, 255, 255, 0.35);
+      background: linear-gradient(145deg, rgba(0, 180, 216, 0.65), rgba(0, 116, 140, 0.88));
+      box-shadow: 0 10px 28px rgba(0, 180, 216, 0.42);
+    }
+
+    #captureBtn:disabled {
+      opacity: .55;
+      cursor: not-allowed;
+      filter: grayscale(.4);
+    }
+
+    #captureBtn svg {
+      width: 34px;
+      height: 34px;
+    }
+
+    #infoPanel {
+      position: fixed;
+      left: 0;
+      right: 0;
+      bottom: -100%;
+      z-index: 35;
+      width: min(100%, 560px);
+      max-height: min(78dvh, 620px);
+      margin: 0 auto;
+      padding: 16px 18px calc(20px + var(--safe-bottom));
+      overflow-y: auto;
+      -webkit-overflow-scrolling: touch;
+      border-radius: 22px 22px 0 0;
+      border-top: 1px solid rgba(126, 255, 218, 0.4);
+      background: rgba(10, 22, 40, 0.92);
+      backdrop-filter: blur(16px);
+      transition: bottom 0.28s cubic-bezier(0.2, 0.9, 0.2, 1);
+      pointer-events: all;
+    }
+
+    #infoPanel.open {
+      bottom: 0;
+    }
+
+    .panel-handle {
+      width: 42px;
+      height: 4px;
+      margin: 0 auto 16px;
+      border-radius: 999px;
+      background: rgba(255, 255, 255, 0.24);
+    }
+
+    .panel-head {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 12px;
+    }
+
+    .panel-name {
+      color: #fff;
+      font-size: 1.08rem;
+      line-height: 1.2;
+      overflow-wrap: anywhere;
+    }
+
+    .panel-cat {
+      margin-top: 4px;
+      color: #9befff;
+      font-size: 0.68rem;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+    }
+
+    .panel-close {
+      border: 0;
+      background: transparent;
+      color: rgba(255, 255, 255, 0.66);
+      font-size: 1.3rem;
+      cursor: pointer;
+    }
+
+    .panel-meta {
+      margin: 12px 0 10px;
+      display: inline-flex;
+      align-items: center;
+      gap: 7px;
+      padding: 5px 10px;
+      border-radius: 999px;
+      border: 1px solid rgba(126, 255, 218, 0.4);
+      background: rgba(0, 201, 167, 0.16);
+      font-size: 0.72rem;
+    }
+
+    .panel-desc {
+      color: rgba(255, 255, 255, 0.8);
+      font-size: 0.9rem;
+      line-height: 1.6;
+      overflow-wrap: anywhere;
+    }
+
+    .panel-map-link {
+      margin-top: 14px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 44px;
+      padding: 0 16px;
+      border-radius: 999px;
+      background: var(--lime);
+      color: #10212a;
+      font-weight: 900;
+      text-decoration: none;
+    }
+
+    #toast {
+      position: fixed;
+      top: calc(150px + var(--safe-top));
+      left: 50%;
+      z-index: 45;
+      max-width: min(92vw, 390px);
+      padding: 11px 18px;
+      border-radius: 999px;
+      background: var(--lime);
+      color: #102131;
+      box-shadow: 0 12px 30px rgba(0, 0, 0, 0.34);
+      font-size: 0.86rem;
+      font-weight: 900;
+      text-align: center;
+      opacity: 0;
+      pointer-events: none;
+      transform: translate(-50%, -18px);
+      transition: opacity 220ms ease, transform 220ms ease;
+      overflow-wrap: anywhere;
+    }
+
+    #toast.show {
+      opacity: 1;
+      transform: translate(-50%, 0);
+    }
+
+    #missingSelection,
+    #errScreen {
+      position: fixed;
+      inset: 0;
+      z-index: 60;
+      display: none;
+      place-items: center;
+      padding: max(20px, var(--safe-top)) max(20px, var(--safe-right)) max(20px, var(--safe-bottom)) max(20px, var(--safe-left));
+      background:
+        radial-gradient(circle at 50% 34%, rgba(0, 180, 216, 0.2), transparent 32%),
+        linear-gradient(180deg, #08131F 0%, #02070D 60%, #00131C 100%);
+      text-align: center;
+    }
+
+    #missingSelection.show,
+    #errScreen.show {
+      display: grid;
+    }
+
+    .missing-card,
+    .error-card {
+      width: min(90vw, 380px);
+      padding: 24px 22px;
+      border: 1px solid rgba(0, 180, 216, 0.28);
+      border-radius: 24px;
+      background: rgba(10, 22, 40, 0.86);
+      box-shadow: 0 18px 42px rgba(0, 0, 0, 0.4);
+      backdrop-filter: blur(18px);
+      color: #fff;
+    }
+
+    .missing-card p,
+    .error-card p {
+      margin-top: 8px;
+      color: rgba(255, 255, 255, 0.72);
+      font-size: 0.9rem;
+      line-height: 1.45;
+    }
+
+    .missing-back,
+    #retryBtn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      margin-top: 18px;
+      min-height: 44px;
+      padding: 0 20px;
+      border: 0;
+      border-radius: 999px;
+      background: var(--lime);
+      color: #102131;
+      font-weight: 900;
+      text-decoration: none;
+      cursor: pointer;
+    }
+
+    @media (max-width: 480px) {
+      .topbar {
+        gap: 10px;
+        padding: calc(10px + var(--safe-top)) max(12px, var(--safe-right)) 12px max(12px, var(--safe-left));
+        border-radius: 0 0 18px 18px;
+      }
+
+      .back-btn {
+        width: 42px;
+        height: 42px;
+        border-radius: 14px;
+      }
+
+      .nav-metrics {
+        grid-template-columns: 1fr 1fr;
+      }
+
+      .metric.status-metric {
+        grid-column: 1 / -1;
+      }
+
+      #locationARStatus {
+        bottom: calc(96px + var(--safe-bottom));
+        padding: 11px 13px;
+        font-size: .8rem;
+      }
+
+      #bottomBar {
+        height: 96px;
+      }
+
+      #captureBtn {
+        width: 68px;
+        height: 68px;
+      }
+
+    }
+
+    @media (orientation: landscape) and (max-height: 540px) {
+      .topbar {
+        padding: calc(6px + var(--safe-top)) max(12px, var(--safe-right)) 8px max(12px, var(--safe-left));
+      }
+
+      #navDestination {
+        font-size: clamp(.88rem, 3vw, 1.15rem);
+      }
+
+      .nav-bottom-row,
+      .nav-metrics {
+        margin-top: 6px;
+      }
+
+      .metric {
+        padding: 5px 8px;
+      }
+
+      #locationARStatus {
+        bottom: calc(82px + var(--safe-bottom));
+        width: min(48vw, 420px);
+        left: max(12px, var(--safe-left));
+        right: auto;
+      }
+
+      #bottomBar {
+        height: 82px;
+      }
+
+      #infoPanel {
+        max-height: min(86dvh, 440px);
+      }
+    }
+
+  </style>
+</head>
+<body>
+  <div id="appLoader" class="app-loader" aria-live="polite" aria-label="Loading KA-KALAKBAY">
+    <div class="app-loader-card">
+      <img
+        src="assets/images/KA-KALAKBAY.svg"
+        alt="KA-KALAKBAY Logo"
+        class="app-loader-logo"
+      />
+
+      <p id="appLoaderText" class="app-loader-text">Loading KA-KALAKBAY</p>
+
+      <div class="app-loader-dots" aria-hidden="true">
+        <span></span>
+        <span></span>
+        <span></span>
+      </div>
+    </div>
+  </div>
+
+  <div id="fallbackBackdrop"></div>
+  <video id="camVideo" autoplay playsinline muted webkit-playsinline></video>
+  <div id="locationSceneHost" aria-label="Location based AR scene">
+    <a-scene
+      id="arScene"
+      embedded
+      loading-screen="enabled: false;"
+      vr-mode-ui="enabled: false"
+      renderer="logarithmicDepthBuffer: true; alpha: true; preserveDrawingBuffer: true;"
+      arjs="sourceType: webcam; debugUIEnabled: false;"
+    >
+      <a-entity
+        id="locationBasedARContent"
+        gps-entity-place="latitude: 0; longitude: 0;"
+        visible="false"
+        position="0 1.6 0">
+      </a-entity>
+
+      <a-entity
+        id="readableZoneARContent"
+        visible="false"
+        position="0 1.6 -4">
+      </a-entity>
+
+      <a-camera
+        id="gpsCamera"
+        gps-camera="gpsMinDistance: 5; positionMinAccuracy: 100;">
+      </a-camera>
+    </a-scene>
+  </div>
+  <canvas id="captureCanvas"></canvas>
+
+  <div id="hud">
+    <header class="topbar" id="topNavigationCard">
+      <a class="back-btn" href="dashboard.html" aria-label="Back to dashboard">
+        <svg width="28" height="28" viewBox="0 0 1024 1024" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+          <path d="M669.6 849.6c8.8 8 22.4 7.2 30.4-1.6s7.2-22.4-1.6-30.4l-309.6-280c-8-7.2-8-17.6 0-24.8l309.6-270.4c8.8-8 9.6-21.6 2.4-30.4-8-8.8-21.6-9.6-30.4-2.4L360.8 480.8c-27.2 24-28 64-0.8 88.8l309.6 280z" fill="#fff"></path>
+        </svg>
+      </a>
+
+      <section class="nav-card" aria-live="polite">
+        <p class="nav-eyebrow">Destination</p>
+        <h1 id="navDestination">Selected Landmark</h1>
+        <div class="nav-bottom-row">
+          <div class="nav-metrics">
+            <div class="metric">
+              <span>Time</span>
+              <strong id="navEta">--</strong>
+            </div>
+            <div class="metric">
+              <span>Distance</span>
+              <strong id="navDistance">--</strong>
+            </div>
+            <div class="metric status-metric">
+              <span>Status</span>
+              <strong id="locationStatus">Locating</strong>
+            </div>
+          </div>
+        </div>
+      </section>
+    </header>
+
+    <div id="bottomBar">
+      <button class="hud-btn" id="infoBtn" type="button" aria-label="Landmark info">i</button>
+      <button id="captureBtn" type="button" aria-label="Capture AR photo" disabled>
+        <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+          <path d="M9 3 7.2 5H5a3 3 0 0 0-3 3v9a3 3 0 0 0 3 3h14a3 3 0 0 0 3-3V8a3 3 0 0 0-3-3h-2.2L15 3H9Zm3 5.25A4.75 4.75 0 1 1 12 17.75a4.75 4.75 0 0 1 0-9.5Zm0 2A2.75 2.75 0 1 0 12 15.75a2.75 2.75 0 0 0 0-5.5Z"/>
+        </svg>
+      </button>
+    </div>
+  </div>
+
+  <div id="locationARStatus" data-state="idle">Move closer to unlock Location AR.</div>
+
+  <aside id="infoPanel" aria-hidden="true">
+    <div class="panel-handle"></div>
+    <div class="panel-head">
+      <div>
+        <h2 class="panel-name" id="panelName">Selected Landmark</h2>
+        <div class="panel-cat" id="panelCat">Landmark</div>
+      </div>
+      <button class="panel-close" id="panelClose" type="button" aria-label="Close info">x</button>
+    </div>
+    <div class="panel-meta" id="panelDistance">Distance: --</div>
+    <p class="panel-desc" id="panelDesc">Select a landmark from the dashboard to begin.</p>
+    <a class="panel-map-link" id="panelMapLink" href="#" target="_blank" rel="noopener">Open in OpenStreetMap</a>
+  </aside>
+
+  <div id="toast"></div>
+
+  <div id="missingSelection" aria-live="polite">
+    <div class="missing-card">
+      <h2>Please select a landmark first.</h2>
+      <p>Choose a destination from the dashboard before opening the AR camera.</p>
+      <a class="missing-back" href="dashboard.html">Back to Dashboard</a>
+    </div>
+  </div>
+
+  <div id="errScreen">
+    <div class="error-card">
+      <h2>Camera or location needs attention</h2>
+      <p id="errMsg">Camera and geolocation require HTTPS or localhost. Please allow permissions and try again.</p>
+      <button id="retryBtn" type="button">Try Again</button>
+    </div>
+  </div>
+
+  <script type="module" src="js/camera.js"></script>
+</body>
+</html>

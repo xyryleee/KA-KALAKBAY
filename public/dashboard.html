@@ -1,0 +1,1402 @@
+﻿<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"/>
+  <title>Dashboard — KA-KALAKBAY</title>
+  <link rel="stylesheet" href="css/style.css"/>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+  <style>
+
+    html,
+    body {
+      width: 100%;
+      min-height: 100%;
+      overflow-x: hidden;
+    }
+
+    :root {
+      --app-max-width: 1280px;
+      --app-side-padding: clamp(18px, 4vw, 44px);
+      --bottom-nav-height: 82px;
+
+      --dashboard-nav-height: calc(var(--header-h, 64px) + var(--safe-top));
+      --dashboard-bottom-nav-height: calc(var(--bottom-nav-height) + var(--safe-bottom));
+      --safe-top: env(safe-area-inset-top, 0px);
+      --safe-bottom: env(safe-area-inset-bottom, 0px);
+      --safe-left: env(safe-area-inset-left, 0px);
+      --safe-right: env(safe-area-inset-right, 0px);
+    }
+
+    .shell {
+      width: min(100%, var(--app-max-width));
+      max-width: var(--app-max-width);
+      min-height: 100dvh;
+      margin-inline: auto;
+      position: relative;
+      background: var(--white);
+      overflow-x: hidden;
+      box-shadow: 0 0 56px rgba(0, 0, 0, 0.12);
+    }
+
+    @media (max-width: 767px) {
+      .shell {
+        width: 100%;
+        max-width: none;
+        box-shadow: none;
+      }
+    }
+
+    .topbar {
+      position: sticky;
+      top: 0;
+      z-index: 80;
+      width: 100%;
+      min-height: var(--dashboard-nav-height);
+      padding-top: var(--safe-top);
+      padding-left: max(var(--app-side-padding), var(--safe-left));
+      padding-right: max(var(--app-side-padding), var(--safe-right));
+    }
+
+    .topbar-title,
+    #tab-title {
+      min-width: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .page {
+      min-height: calc(100dvh - var(--dashboard-nav-height));
+      padding-bottom: calc(var(--dashboard-bottom-nav-height) + 32px);
+      overflow-x: hidden;
+    }
+
+    #tab-home > div:last-child {
+      width: 100%;
+      max-width: none;
+      margin: 0;
+      padding:
+        clamp(1rem, 3vw, 2rem)
+        max(var(--app-side-padding), var(--safe-left))
+        clamp(1.25rem, 3vw, 2rem)
+        max(var(--app-side-padding), var(--safe-right)) !important;
+
+      display: flex !important;
+      flex-direction: column !important;
+      gap: clamp(1.25rem, 3vw, 1.75rem) !important;
+      grid-template-columns: none !important;
+    }
+
+    #apoFactCard,
+    #tab-home .stat-card,
+    #tab-home > div:last-child > div {
+      width: 100%;
+      max-width: 100%;
+      min-width: 0;
+    }
+
+    .apo-fact-card,
+    .stat-card {
+      width: 100%;
+      max-width: 100%;
+    }
+
+    #tab-achievements > div,
+    #tab-profile > div {
+      width: 100%;
+      max-width: none;
+      margin: 0;
+      padding:
+        clamp(1rem, 3vw, 2rem)
+        max(var(--app-side-padding), var(--safe-left))
+        clamp(1.25rem, 3vw, 2rem)
+        max(var(--app-side-padding), var(--safe-right)) !important;
+    }
+
+    /* ── Leaflet map containers ── */
+    .leaflet-map {
+      width: 100%;
+      min-height: 320px;
+      border-radius: var(--radius);
+      overflow: hidden;
+      border: 1px solid var(--grey);
+      z-index: 1;
+    }
+    #map-main  { height: clamp(320px, 52dvh, 520px); }
+    #map-mini  {
+      width: 100%;
+      height: clamp(340px, 48dvh, 560px);
+    }
+
+    .bnav {
+      position: fixed;
+      left: 50%;
+      bottom: 0;
+      transform: translateX(-50%);
+
+      width: min(100%, var(--app-max-width, 1280px));
+      max-width: var(--app-max-width, 1280px);
+
+      height: calc(var(--bottom-nav-height, 82px) + var(--safe-bottom, 0px));
+      min-height: calc(var(--bottom-nav-height, 82px) + var(--safe-bottom, 0px));
+      padding-bottom: var(--safe-bottom, 0px);
+
+      display: flex;
+      align-items: center;
+      justify-content: center;
+
+      background: linear-gradient(
+        to top,
+        rgba(39, 102, 123, 0.96),
+        rgba(39, 102, 123, 0.78),
+        rgba(39, 102, 123, 0)
+      );
+
+      z-index: 1000;
+    }
+
+    .bnav-inner {
+      width: min(100%, 430px);
+      height: var(--bottom-nav-height, 82px);
+
+      display: grid;
+      grid-template-columns: repeat(5, 1fr);
+      align-items: center;
+      justify-items: center;
+
+      margin-inline: auto;
+    }
+
+    .bnav-btn {
+      width: 72px;
+      height: var(--bottom-nav-height, 82px);
+      min-height: var(--bottom-nav-height, 82px);
+      display: grid;
+      place-items: center;
+      padding: 0;
+      border: 0;
+      background: transparent;
+    }
+
+    .bnav-btn svg {
+      width: 26px;
+      height: 26px;
+    }
+
+    .bnav-fab {
+      width: 64px;
+      height: 64px;
+      min-width: 64px;
+      min-height: 64px;
+      display: grid;
+      place-items: center;
+      justify-self: center;
+      align-self: center;
+    }
+
+    .bnav-fab svg {
+      width: 34px;
+      height: 34px;
+    }
+
+    @media (max-width: 767px) {
+      .bnav {
+        width: 100%;
+        max-width: none;
+      }
+
+      .bnav-inner {
+        width: min(100%, 430px);
+      }
+
+      .bnav-btn {
+        width: 72px;
+      }
+
+      .bnav-btn svg {
+        width: 26px;
+        height: 26px;
+      }
+
+      .bnav-fab {
+        width: 64px;
+        height: 64px;
+      }
+    }
+
+    @media (min-width: 768px) {
+      .bnav-inner {
+        width: 430px;
+      }
+    }
+
+    #tab-maps.active {
+      position: fixed;
+      left: 50%;
+      transform: translateX(-50%);
+      width: min(100%, var(--app-max-width));
+      max-width: var(--app-max-width);
+      top: var(--dashboard-nav-height);
+      bottom: var(--dashboard-bottom-nav-height);
+      z-index: 20;
+      display: block;
+      margin: 0;
+      padding: 0;
+      overflow: hidden;
+      background: var(--white);
+    }
+
+    #tab-maps .dashboard-map-page {
+      position: absolute;
+      inset: 0;
+      margin: 0 !important;
+      padding: 0 !important;
+      border: 0 !important;
+      border-radius: 0 !important;
+      background: transparent !important;
+      box-shadow: none !important;
+    }
+
+    #tab-maps.active #map-main {
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      margin: 0;
+      border: 0;
+      border-radius: 0;
+      z-index: 1;
+    }
+
+    @media (max-width: 767px) {
+      #tab-maps.active {
+        left: 0;
+        right: 0;
+        transform: none;
+        width: 100%;
+        max-width: none;
+      }
+    }
+
+    .map-legend,
+    #mapLegend,
+    .legend,
+    .landmark-legend,
+    .route-legend {
+      display: none !important;
+    }
+    .leaflet-popup-content-wrapper {
+      border-radius: 1rem !important;
+      font-family: "Konkhmer Sleokchher", sans-serif !important;
+      box-shadow: 0 4px 20px rgba(0,0,0,.16) !important;
+    }
+    .leaflet-popup-content { font-size:.85rem !important; line-height:1.5 !important; }
+    .lm-popup-name { font-size:.95rem; color:#27667B; margin-bottom:.2rem; font-weight:600; }
+    .lm-popup-cat  { font-size:.72rem; color:#6B7280; }
+    .lm-popup-xp   { font-size:.72rem; color:#0090AD; margin-top:.25rem; }
+
+    .landmark-photo-pin {
+      background: transparent;
+      border: none;
+    }
+
+    .landmark-photo-pin__bubble {
+      width: 54px;
+      height: 54px;
+      min-width: 54px;
+      min-height: 54px;
+      max-width: 54px;
+      max-height: 54px;
+      border-radius: 50%;
+      padding: 4px;
+      background: #27667B;
+      border: 3px solid #DDEB9D;
+      box-shadow: 0 8px 20px rgba(10, 22, 40, 0.35);
+      overflow: hidden;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: transform 0.18s ease, box-shadow 0.18s ease, border-color 0.18s ease;
+    }
+
+    .landmark-photo-pin__bubble img {
+      width: 100%;
+      height: 100%;
+      min-width: 100%;
+      min-height: 100%;
+      display: block;
+      object-fit: cover;
+      object-position: center center;
+      border-radius: 50%;
+      background: #0A1628;
+      flex: 0 0 auto;
+    }
+
+    .landmark-photo-pin__tip {
+      width: 16px;
+      height: 16px;
+      margin: -6px auto 0;
+      background: #27667B;
+      border-right: 3px solid #DDEB9D;
+      border-bottom: 3px solid #DDEB9D;
+      transform: rotate(45deg);
+      box-shadow: 4px 4px 10px rgba(10, 22, 40, 0.22);
+    }
+
+    @media (max-width: 420px) {
+      .landmark-photo-pin {
+        transform: scale(.9);
+        transform-origin: 50% 100%;
+      }
+    }
+
+    .landmark-photo-pin.is-active .landmark-photo-pin__bubble {
+      border-color: #00B4D8;
+      box-shadow:
+        0 0 0 5px rgba(0, 180, 216, 0.18),
+        0 10px 24px rgba(10, 22, 40, 0.42);
+      transform: scale(1.08);
+    }
+
+    /* ── Tab panel visibility ── */
+    .tab-panel          { display: none; }
+    .tab-panel.active   { display: block; }
+
+    /* ── Greeting band ── */
+    .greeting-band {
+      width: 100%;
+      background: linear-gradient(135deg, rgba(0,144,173,.09) 0%, transparent 100%);
+      padding:
+        clamp(1.5rem, 4vw, 2.5rem)
+        max(var(--app-side-padding), var(--safe-left))
+        clamp(1.1rem, 3vw, 1.5rem)
+        max(var(--app-side-padding), var(--safe-right));
+      border-bottom: 1px solid rgba(0,144,173,.08);
+    }
+
+    /* ── Achievement grid items ── */
+    .ach-item {
+      display: flex;
+      align-items: center;
+      gap: .875rem;
+      padding: .875rem 1rem;
+      background: var(--grey);
+      border-radius: var(--radius);
+      box-shadow: var(--shadow-card);
+      cursor: pointer;
+      border: 2px solid transparent;
+      transition: transform .18s, filter .25s, opacity .25s, border-color .2s;
+      user-select: none;
+      position: relative;
+    }
+    :root.dark .ach-item { background: #1e293b; }
+    .ach-item:hover      { transform: translateY(-2px); }
+
+    /* Not visited → greyscale */
+    .ach-item:not(.visited) {
+      filter: grayscale(100%);
+      opacity: .72;
+    }
+    /* Visited → full colour + cyan border */
+    .ach-item.visited {
+      filter: none;
+      opacity: 1;
+      border-color: var(--cyan);
+    }
+
+    .ach-thumb {
+      width: 64px; height: 64px;
+      border-radius: 999px;
+      object-fit: cover;
+      flex-shrink: 0;
+    }
+    .ach-info   { flex: 1; min-width: 0; }
+    .ach-name   { font-size: clamp(.9rem, 4vw, 1.1rem); line-height: 1.1; }
+    .ach-cat    { font-size: .73rem; color: var(--grey-t); margin-top: .2rem; }
+
+    .ach-badge {
+      font-size: .62rem; padding: .15rem .5rem;
+      border-radius: var(--radius-pill);
+      background: var(--cyan); color: #fff;
+      display: none; margin-top: .35rem;
+    }
+    .ach-item.visited .ach-badge { display: inline-block; }
+
+    .achievement-icon,
+    .apo-fact-icon {
+      display: grid;
+      place-items: center;
+      width: 38px;
+      height: 38px;
+      border-radius: 999px;
+      background: rgba(39, 102, 123, 0.12);
+      color: #27667B;
+      flex: 0 0 auto;
+    }
+
+    .stat-card .achievement-icon {
+      width: 50px;
+      height: 50px;
+      border-radius: 1rem;
+      background: var(--cyan);
+      color: #fff;
+    }
+
+    .achievement-icon svg,
+    .apo-fact-icon svg {
+      display: block;
+    }
+
+    .apo-fact-section {
+      width: 100%;
+      max-width: 100%;
+      min-width: 0;
+    }
+
+    .section-title,
+    .apo-fact-title {
+      margin: 0 0 0.65rem;
+      color: var(--black);
+      font-size: clamp(0.95rem, 2.5vw, 1.1rem);
+      font-weight: 900;
+      line-height: 1.1;
+      letter-spacing: 0.02em;
+      text-transform: uppercase;
+    }
+
+    :root.dark .section-title,
+    :root.dark .apo-fact-title {
+      color: #f8fafc;
+    }
+
+    .apo-fact-card {
+      width: 100%;
+      max-width: 100%;
+      margin: 0;
+      padding: clamp(14px, 4vw, 18px);
+      border-radius: 20px;
+      background: rgba(39, 102, 123, 0.12);
+      border: 1px solid rgba(39, 102, 123, 0.18);
+      box-shadow: var(--shadow-card);
+    }
+
+    .apo-fact-header {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      min-width: 0;
+    }
+
+    .apo-fact-icon {
+      background: #27667B;
+      color: #fff;
+    }
+
+    .apo-fact-category {
+      margin: 0;
+      font-size: .72rem;
+      font-weight: 800;
+      text-transform: uppercase;
+      letter-spacing: .08em;
+      color: #27667B;
+    }
+
+    .apo-fact-card h3 {
+      margin: 2px 0 0;
+      font-size: 1rem;
+      font-weight: 800;
+      color: #0A1628;
+    }
+
+    .apo-fact-text {
+      margin: 10px 0 0;
+      font-size: .9rem;
+      line-height: 1.55;
+      color: #243746;
+      overflow-wrap: anywhere;
+    }
+
+    :root.dark .apo-fact-card {
+      background: rgba(39, 102, 123, 0.2);
+      border-color: rgba(0, 180, 216, .22);
+    }
+
+    :root.dark .apo-fact-card h3,
+    :root.dark .apo-fact-text {
+      color: #fff;
+    }
+
+    .ach-check {
+      font-size: 1.2rem;
+      opacity: 0; transition: opacity .2s;
+      flex-shrink: 0;
+    }
+    .ach-item.visited .ach-check { opacity: 1; }
+
+    .ach-actions {
+      display: flex;
+      flex-direction: column;
+      align-items: flex-end;
+      gap: 6px;
+      flex-shrink: 0;
+    }
+
+    .visit-ar-btn,
+    .osm-link-btn {
+      min-width: 86px;
+      border: none;
+      border-radius: 999px;
+      padding: 6px 10px;
+      font-size: .65rem;
+      font-weight: 700;
+      line-height: 1.2;
+      cursor: pointer;
+      white-space: nowrap;
+    }
+
+    .visit-ar-btn {
+      background: linear-gradient(135deg, #00B4D8, #27667B) !important;
+      color: #ffffff !important;
+      border: none !important;
+      border-radius: 999px;
+      font-weight: 800;
+      cursor: pointer;
+      box-shadow: 0 8px 20px rgba(0, 180, 216, 0.22);
+      transition:
+        transform 0.2s ease,
+        box-shadow 0.2s ease,
+        filter 0.2s ease;
+    }
+
+    .visit-ar-btn:hover {
+      transform: translateY(-1px);
+      box-shadow: 0 12px 26px rgba(0, 180, 216, 0.3);
+      filter: brightness(1.05);
+    }
+
+    .visit-ar-btn:active {
+      transform: translateY(0);
+    }
+
+    .ach-item.visited .visit-ar-btn,
+    .ach-item:not(.visited) .visit-ar-btn {
+      background: linear-gradient(135deg, #00B4D8, #27667B) !important;
+      color: #ffffff !important;
+      opacity: 1 !important;
+    }
+
+    .osm-link-btn {
+      background: rgba(39,102,123,.12);
+      color: #27667B;
+      border: 1px solid rgba(39,102,123,.22);
+    }
+
+    .landmark-modal {
+      position: fixed;
+      inset: 0;
+      z-index: 1200;
+      display: none;
+      align-items: flex-end;
+      justify-content: center;
+      padding: max(16px, var(--safe-top)) max(16px, var(--safe-right)) max(16px, var(--safe-bottom)) max(16px, var(--safe-left));
+      background: rgba(0, 0, 0, .48);
+      backdrop-filter: blur(8px);
+    }
+
+    .landmark-modal.show { display: flex; }
+
+    .landmark-picker {
+      width: min(100%, 560px);
+      max-height: min(82dvh, 720px);
+      overflow: auto;
+      -webkit-overflow-scrolling: touch;
+      border-radius: 28px;
+      background: linear-gradient(160deg, #123547, #081722);
+      border: 1px solid rgba(221,235,157,.28);
+      box-shadow: 0 24px 60px rgba(0,0,0,.36);
+      padding: 18px;
+    }
+
+    .landmark-picker-head {
+      display: flex;
+      align-items: start;
+      justify-content: space-between;
+      gap: 12px;
+      margin-bottom: 14px;
+      color: #fff;
+    }
+
+    .landmark-picker-head p {
+      color: rgba(255,255,255,.7);
+      margin-top: 4px;
+      font-size: .82rem;
+      line-height: 1.4;
+    }
+
+    .landmark-close {
+      width: 40px;
+      height: 40px;
+      border-radius: 14px;
+      border: 1px solid rgba(255,255,255,.18);
+      background: rgba(255,255,255,.08);
+      color: #fff;
+      font-size: 1.1rem;
+      cursor: pointer;
+    }
+
+    .landmark-picker-grid {
+      display: grid;
+      gap: 10px;
+    }
+
+    .landmark-pick-card {
+      display: grid;
+      grid-template-columns: 74px minmax(0, 1fr);
+      gap: 12px;
+      width: 100%;
+      padding: 10px;
+      border: 1px solid rgba(255,255,255,.12);
+      border-radius: 18px;
+      background: rgba(255,255,255,.08);
+      color: #fff;
+      text-align: left;
+      cursor: pointer;
+    }
+
+    .landmark-pick-card,
+    .ach-item,
+    .stat-card,
+    .apo-fact-card {
+      overflow-wrap: anywhere;
+    }
+
+    .landmark-pick-card img {
+      width: 74px;
+      height: 58px;
+      border-radius: 14px;
+      object-fit: cover;
+    }
+
+    .landmark-pick-card strong {
+      display: block;
+      font-size: .95rem;
+      line-height: 1.15;
+    }
+
+    .landmark-pick-card span {
+      display: block;
+      color: rgba(255,255,255,.66);
+      font-size: .72rem;
+      margin-top: 4px;
+    }
+
+    .landmark-pick-card em {
+      display: inline-flex;
+      margin-top: 8px;
+      padding: 5px 9px;
+      border-radius: 999px;
+      background: #DDEB9D;
+      color: #10212a;
+      font-style: normal;
+      font-size: .68rem;
+      font-weight: 800;
+    }
+
+    /* ── Journey mini-cards ── */
+    #journey-cards {
+      width: 100%;
+      display: grid !important;
+      grid-template-columns: repeat(auto-fit, minmax(min(100%, 280px), 1fr)) !important;
+      gap: clamp(1rem, 2vw, 1.25rem) !important;
+    }
+
+    .j-card-visited {
+      width: 100%;
+      border-radius: 1.5rem;
+      overflow: hidden;
+      position: relative;
+      aspect-ratio: 16 / 9;
+      background: var(--grey);
+    }
+    .j-card-visited img {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      object-position: center;
+    }
+    .j-card-lbl {
+      position: absolute; bottom:0; left:0; right:0;
+      padding: .5rem .75rem;
+      background: linear-gradient(to top, rgba(0,0,0,.65), transparent);
+      color: #fff; font-size: .72rem;
+    }
+
+    .journey-empty-state {
+      width: 100%;
+      min-height: clamp(180px, 28vw, 260px);
+
+      grid-column: 1 / -1;
+
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: clamp(1rem, 4vw, 2rem);
+
+      padding: clamp(1.25rem, 4vw, 2.5rem);
+
+      border: 0;
+      border-radius: clamp(20px, 3vw, 30px);
+      background: #ffffff;
+      color: var(--black);
+      cursor: pointer;
+      text-align: left;
+
+      box-shadow: 0 14px 40px rgba(39, 102, 123, 0.12);
+      transition:
+        transform 0.2s ease,
+        box-shadow 0.2s ease,
+        background 0.2s ease;
+    }
+
+    .journey-empty-state:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 18px 50px rgba(39, 102, 123, 0.18);
+      background: #f8fcff;
+    }
+
+    .journey-empty-state:focus-visible {
+      outline: 3px solid rgba(0, 180, 216, 0.45);
+      outline-offset: 4px;
+    }
+
+    .journey-empty-pin {
+      flex: 0 0 auto;
+      width: clamp(110px, 18vw, 170px);
+      display: grid;
+      place-items: center;
+    }
+
+    .journey-empty-pin svg {
+      width: 100%;
+      height: auto;
+      display: block;
+    }
+
+    .journey-empty-copy {
+      min-width: 0;
+      display: flex;
+      flex-direction: column;
+      gap: 0.35rem;
+    }
+
+    .journey-empty-copy p {
+      margin: 0;
+      color: #000;
+      font-size: clamp(1.25rem, 4vw, 2.35rem);
+      font-weight: 800;
+      line-height: 1.12;
+    }
+
+    .journey-empty-copy strong {
+      display: inline-block;
+      color: #000;
+      font-size: clamp(1.4rem, 5vw, 2.75rem);
+      font-weight: 900;
+      line-height: 1.05;
+      text-decoration: underline;
+      text-underline-offset: 0.12em;
+      letter-spacing: 0.01em;
+    }
+
+    :root.dark .journey-empty-state {
+      background: #111827;
+      color: #f8fafc;
+      box-shadow: 0 14px 40px rgba(0, 0, 0, 0.28);
+    }
+
+    :root.dark .journey-empty-copy p,
+    :root.dark .journey-empty-copy strong {
+      color: #f8fafc;
+    }
+
+    .confirm-modal {
+      position: fixed;
+      inset: 0;
+      z-index: 9999;
+      display: none;
+      align-items: center;
+      justify-content: center;
+      padding:
+        max(1rem, env(safe-area-inset-top, 0px))
+        max(1rem, env(safe-area-inset-right, 0px))
+        max(1rem, env(safe-area-inset-bottom, 0px))
+        max(1rem, env(safe-area-inset-left, 0px));
+    }
+
+    .confirm-modal.show {
+      display: flex;
+    }
+
+    .confirm-modal-backdrop {
+      position: absolute;
+      inset: 0;
+      background: rgba(2, 8, 16, 0.65);
+      backdrop-filter: blur(5px);
+    }
+
+    .confirm-modal-panel {
+      position: relative;
+      z-index: 1;
+      width: min(92vw, 420px);
+      padding: clamp(1.25rem, 4vw, 1.75rem);
+      border-radius: 24px;
+      background: #ffffff;
+      color: var(--black);
+      box-shadow: 0 24px 70px rgba(0, 0, 0, 0.28);
+      animation: modalSlideUp 0.25s ease both;
+    }
+
+    :root.dark .confirm-modal-panel {
+      background: #1e293b;
+      color: #f8fafc;
+    }
+
+    .confirm-modal-panel h2 {
+      margin: 0 0 0.5rem;
+      font-size: clamp(1.25rem, 4vw, 1.6rem);
+    }
+
+    .confirm-modal-panel p {
+      margin: 0;
+      color: var(--grey-t);
+      line-height: 1.5;
+    }
+
+    .confirm-modal-actions {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 0.75rem;
+      margin-top: 1.25rem;
+    }
+
+    .confirm-cancel-btn {
+      background: #e5e7eb;
+      color: #0A1628;
+    }
+
+    .confirm-signout-btn {
+      background: linear-gradient(135deg, #ef4444, #991b1b);
+      color: #ffffff;
+    }
+
+    .reveal-up {
+      opacity: 0;
+      transform: translateY(24px);
+      animation: revealUp 0.55s ease forwards;
+    }
+
+    @keyframes modalSlideUp {
+      from {
+        opacity: 0;
+        transform: translateY(18px) scale(0.98);
+      }
+
+      to {
+        opacity: 1;
+        transform: translateY(0) scale(1);
+      }
+    }
+
+    @keyframes revealUp {
+      from {
+        opacity: 0;
+        transform: translateY(24px);
+      }
+
+      to {
+        opacity: 1;
+        transform: translateY(0);
+      }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      .reveal-up {
+        opacity: 1;
+        transform: none;
+        animation: none;
+      }
+    }
+
+    #landmark-list,
+    #landmarkSelectionList {
+      display: grid !important;
+      grid-template-columns: repeat(auto-fit, minmax(min(100%, 320px), 1fr));
+      gap: .75rem;
+    }
+
+    @media (max-width: 640px) {
+      .confirm-modal-actions {
+        grid-template-columns: 1fr;
+      }
+
+      #journey-cards {
+        grid-template-columns: 1fr !important;
+      }
+
+      .journey-empty-state {
+        flex-direction: column;
+        text-align: center;
+        gap: 1rem;
+        padding: 1.5rem 1rem;
+      }
+
+      .journey-empty-pin {
+        width: clamp(96px, 36vw, 140px);
+      }
+
+      .journey-empty-copy p {
+        font-size: clamp(1.05rem, 6vw, 1.55rem);
+      }
+
+      .journey-empty-copy strong {
+        font-size: clamp(1.25rem, 7vw, 1.9rem);
+      }
+    }
+
+    /* ── Map iframe ── */
+    .map-wrap {
+      border-radius: var(--radius);
+      overflow: hidden;
+      border: 1px solid var(--grey);
+    }
+
+    /* ── Profile avatar ── */
+    .avatar {
+      width: 68px; height: 68px; border-radius: 50%;
+      background: var(--cyan);
+      display: flex; align-items: center; justify-content: center;
+      color: #fff; font-size: 1.7rem; flex-shrink: 0;
+      box-shadow: var(--shadow-lg);
+    }
+
+    @media (min-width: 768px) {
+      body { background: #f0f4f8; }
+      :root.dark body { background: #020810; }
+
+      .apo-fact-card,
+      .stat-card {
+        border-radius: 24px;
+      }
+
+      #tab-home > div:last-child {
+        display: flex !important;
+        flex-direction: column !important;
+        grid-template-columns: none !important;
+      }
+
+      #tab-home > div:last-child > div,
+      #apoFactCard,
+      #tab-home .stat-card {
+        width: 100%;
+        max-width: 100%;
+        min-width: 0;
+      }
+
+      #journey-cards {
+        grid-template-columns: repeat(auto-fit, minmax(min(100%, 280px), 1fr)) !important;
+      }
+
+      #landmark-list,
+      #landmarkSelectionList {
+        display: grid !important;
+        grid-template-columns: repeat(auto-fit, minmax(min(100%, 320px), 1fr));
+      }
+    }
+
+    @media (max-width: 767px) {
+      .shell {
+        max-width: none;
+      }
+
+      #tab-home > div:last-child,
+      #tab-achievements > div,
+      #tab-profile > div {
+        padding-inline: max(var(--app-side-padding), var(--safe-left)) max(var(--app-side-padding), var(--safe-right)) !important;
+      }
+
+      .ach-actions {
+        align-items: stretch;
+      }
+
+      .visit-ar-btn,
+      .osm-link-btn {
+        min-height: 36px;
+      }
+    }
+
+    @media (max-width: 480px) {
+      .ach-item {
+        align-items: flex-start;
+        gap: .75rem;
+      }
+
+      .ach-thumb {
+        width: 56px;
+        height: 56px;
+      }
+
+      .ach-actions {
+        width: 100%;
+        margin-top: .5rem;
+        grid-column: 1 / -1;
+      }
+
+      .landmark-pick-card {
+        grid-template-columns: 64px minmax(0, 1fr);
+      }
+
+      .landmark-pick-card img {
+        width: 64px;
+        height: 56px;
+      }
+    }
+
+    /* Tab title in topbar */
+    #tab-title { font-size: clamp(1rem,4.5vw,1.4rem); }
+  </style>
+</head>
+<body>
+<div id="appLoader" class="app-loader" aria-live="polite" aria-label="Loading KA-KALAKBAY">
+  <div class="app-loader-card">
+    <img
+      src="assets/images/KA-KALAKBAY.svg"
+      alt="KA-KALAKBAY Logo"
+      class="app-loader-logo"
+    />
+
+    <p id="appLoaderText" class="app-loader-text">Loading KA-KALAKBAY</p>
+
+    <div class="app-loader-dots" aria-hidden="true">
+      <span></span>
+      <span></span>
+      <span></span>
+    </div>
+  </div>
+</div>
+
+<div id="toast" class="toast"></div>
+
+<div class="shell">
+
+  <!-- ══════════════════════════════════════════════
+       TOP BAR
+  ══════════════════════════════════════════════ -->
+  <header class="topbar">
+    <svg class="topbar-logo" viewBox="0 0 360 360" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+      <polygon points="68.58,302.06 125.97,302.06 125.97,193.1 217.49,302.06 290.92,302.06 189.24,186.09 290.4,70.03 217.69,69.52 126.49,173.45 126.49,69.52 68.58,69.52" fill="currentColor"/>
+      <rect x="103.03" y="163.68" width="44.21" height="44.21" fill="currentColor"/>
+      <path fill="#ED1C24" d="M249.14,297.74l-48.09-92.86c-13.13-25.35-4.4-56.54,19.98-71.39c17.28-10.53,38.97-10.58,56.3-0.14l0.18,0.11c24.63,14.83,33.44,46.29,20.1,71.76L249.14,297.74z"/>
+      <circle fill="#fff" cx="249.39" cy="178.41" r="33.24"/>
+    </svg>
+    <span class="topbar-title" id="tab-title">KA-KALAKBAY</span>
+    <div style="flex:1;"></div>
+  </header>
+
+  <!-- ══════════════════════════════════════════════
+       SCROLLABLE PAGE AREA
+  ══════════════════════════════════════════════ -->
+  <div class="page" id="main-scroll">
+
+    <!-- ────────────────────────────────────────────
+         TAB: HOME
+    ──────────────────────────────────────────── -->
+    <div id="tab-home" class="tab-panel active">
+
+      <!-- Greeting -->
+      <div class="greeting-band">
+        <h2 style="font-size:clamp(1.3rem,6vw,1.9rem);line-height:.95;">
+          TARA NA!
+        </h2>
+        <p style="font-size:clamp(.85rem,3.8vw,1.05rem);margin-top:.4rem;">
+          Saan ang <strong>LAKBAY</strong> mo ngayon?
+        </p>
+      </div>
+
+      <div style="padding:.875rem 1.25rem;display:flex;flex-direction:column;gap:1.125rem;">
+
+        <!-- Apo's Fact of the Day -->
+        <section class="dashboard-section apo-fact-section">
+          <h2 class="section-title apo-fact-title">APO'S FACT OF THE DAY</h2>
+
+          <section id="apoFactCard" class="apo-fact-card">
+            <div class="apo-fact-header">
+              <span class="apo-fact-icon" aria-hidden="true">
+                <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor">
+                  <path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5A2.5 2.5 0 1 1 12 6a2.5 2.5 0 0 1 0 5.5z"/>
+                </svg>
+              </span>
+              <div>
+                <p id="apoFactCategory" class="apo-fact-category">History</p>
+                <h3 id="apoFactTitle">Apo's Fact of the Day</h3>
+              </div>
+            </div>
+            <p id="apoFactText" class="apo-fact-text"></p>
+          </section>
+        </section>
+        <!-- Stats dark card -->
+        <div class="stat-card">
+          <!-- Achievements row -->
+          <div style="display:flex;align-items:center;gap:.875rem;margin-bottom:1rem;">
+            <span class="achievement-icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24" width="22" height="22" fill="currentColor">
+                <path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5A2.5 2.5 0 1 1 12 6a2.5 2.5 0 0 1 0 5.5z"/>
+              </svg>
+            </span>
+            <div>
+              <p style="font-size:.7rem;color:rgba(255,255,255,.6);letter-spacing:.08em;">ACHIEVEMENTS</p>
+              <p id="stat-visited" style="font-size:1.4rem;color:#fff;line-height:1;">0/7 VISITED</p>
+            </div>
+          </div>
+
+          <!-- Progress bar -->
+          <div style="margin-bottom:.875rem;">
+            <div style="display:flex;justify-content:space-between;margin-bottom:.35rem;">
+              <span style="font-size:.7rem;color:rgba(255,255,255,.6);">SITES VISITED</span>
+              <span id="stat-pct" style="font-size:.7rem;color:rgba(255,255,255,.6);">0%</span>
+            </div>
+            <div class="prog-track">
+              <div id="prog-fill" class="prog-fill" style="width:0%;"></div>
+            </div>
+          </div>
+
+          <!-- XP box -->
+          <div class="xp-box">
+            <span style="font-size:.82rem;color:#fff;">XP POINTS</span>
+            <span id="stat-xp" style="font-size:1.4rem;color:#fff;">0</span>
+          </div>
+        </div>
+
+        <!-- Your Journey preview -->
+        <div data-section="journey">
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:.625rem;">
+            <span style="font-size:.95rem;">YOUR JOURNEY</span>
+            <button class="btn-link" data-switch-tab="achievements">VIEW ALL</button>
+          </div>
+          <div id="journey-cards" style="display:grid;grid-template-columns:1fr 1fr;gap:.75rem;">
+            <!-- Filled dynamically by JS -->
+            <div class="j-card-visited">
+              <img src="assets/images/ulo-ng-apo.jpg" alt="Ulo ng Apo Monument"/>
+            </div>
+            <div class="j-card-visited">
+              <img src="assets/images/spanish-gate.jpg" alt="Spanish Gate"/>
+            </div>
+          </div>
+        </div>
+
+        <!-- Mini map preview -->
+        <div>
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:.625rem;">
+            <span style="font-size:.95rem;">NEARBY LANDMARKS</span>
+            <button class="btn-link" data-switch-tab="maps">FULL MAP</button>
+          </div>
+          <div id="map-mini" class="leaflet-map" aria-label="Mini landmarks map"></div>
+        </div>
+
+      </div>
+    </div><!-- /tab-home -->
+
+
+    <!-- ────────────────────────────────────────────
+         TAB: ACHIEVEMENTS
+    ──────────────────────────────────────────── -->
+    <div id="tab-achievements" class="tab-panel">
+
+      <div style="padding:.875rem 1.25rem 2rem;display:flex;flex-direction:column;gap:.875rem;">
+
+        <!-- Stats card (mirrors home) -->
+        <div class="stat-card">
+          <div style="display:flex;align-items:center;gap:.875rem;margin-bottom:1rem;">
+            <span class="achievement-icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24" width="22" height="22" fill="currentColor">
+                <path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5A2.5 2.5 0 1 1 12 6a2.5 2.5 0 0 1 0 5.5z"/>
+              </svg>
+            </span>
+            <div>
+              <p style="font-size:.7rem;color:rgba(255,255,255,.6);letter-spacing:.08em;">ACHIEVEMENTS</p>
+              <p id="ach-stat-visited" style="font-size:1.4rem;color:#fff;line-height:1;">0/7 VISITED</p>
+            </div>
+          </div>
+          <div style="display:flex;justify-content:space-between;margin-bottom:.35rem;">
+            <span style="font-size:.7rem;color:rgba(255,255,255,.6);">SITES VISITED</span>
+            <span id="ach-stat-pct" style="font-size:.7rem;color:rgba(255,255,255,.6);">0%</span>
+          </div>
+          <div class="prog-track">
+            <div id="ach-prog-fill" class="prog-fill" style="width:0%;"></div>
+          </div>
+        </div>
+
+        <!-- Hint -->
+        <p style="font-size:.73rem;color:var(--grey-t);text-align:center;">
+          Choose a landmark, open Live View AR, and unlock it when you reach the 50 m range.
+        </p>
+
+        <!-- Landmark list — built by JS -->
+        <div id="landmark-list" style="display:flex;flex-direction:column;gap:.75rem;"></div>
+
+      </div>
+    </div><!-- /tab-achievements -->
+
+
+    <!-- ────────────────────────────────────────────
+         TAB: MAPS
+    ──────────────────────────────────────────── -->
+    <div id="tab-maps" class="tab-panel">
+      <div class="dashboard-map-page">
+        <div id="map-main" class="leaflet-map" aria-label="Olongapo landmarks map"></div>
+      </div>
+    </div><!-- /tab-maps -->
+
+
+    <!-- ────────────────────────────────────────────
+         TAB: PROFILE
+    ──────────────────────────────────────────── -->
+    <div id="tab-profile" class="tab-panel">
+      <div style="padding:1.25rem;">
+
+        <!-- Avatar + user info -->
+        <div style="display:flex;align-items:center;gap:1rem;margin-bottom:1.5rem;">
+          <div class="avatar" id="user-avatar">U</div>
+          <div>
+            <p style="font-size:.75rem;color:var(--grey-t);">Hello!</p>
+            <p id="user-name" style="font-size:1.25rem;line-height:1.1;">Ka-Lakbay</p>
+            <p id="user-email" style="font-size:.78rem;color:var(--grey-t);margin-top:.2rem;"></p>
+          </div>
+        </div>
+
+        <h3 style="font-size:1rem;margin-bottom:.875rem;border-bottom:1px solid var(--grey);padding-bottom:.5rem;letter-spacing:.04em;">
+          SITE SETTINGS
+        </h3>
+
+        <!-- Dark Mode toggle -->
+        <div class="sw-row">
+          <div class="sw-icon">🌙</div>
+          <span class="sw-label">Dark Mode</span>
+          <label class="sw" aria-label="Toggle dark mode">
+            <input type="checkbox" id="dark-sw"/>
+            <div class="sw-track"></div>
+          </label>
+        </div>
+
+        <!-- Colorblind Mode toggle -->
+        <div class="sw-row" style="margin-bottom:1.5rem;">
+          <div class="sw-icon" style="background:rgba(0,144,173,.1);">👁</div>
+          <span class="sw-label">Colorblind Mode</span>
+          <label class="sw" aria-label="Toggle colorblind mode">
+            <input type="checkbox" id="cb-sw"/>
+            <div class="sw-track"></div>
+          </label>
+        </div>
+
+        <button id="reset-btn" class="btn btn-outline mb-2">
+          Reset Progress
+        </button>
+        <button id="signout-btn" class="btn btn-danger">
+          Sign Out
+        </button>
+
+      </div>
+    </div><!-- /tab-profile -->
+
+  </div><!-- /page -->
+
+
+  <!-- ══════════════════════════════════════════════
+       BOTTOM NAV
+  ══════════════════════════════════════════════ -->
+  <nav class="bnav" aria-label="Main navigation">
+    <div class="bnav-inner">
+
+      <!-- Home -->
+      <button class="bnav-btn active" data-tab="home" aria-label="Home">
+        <svg viewBox="0 0 24 24" fill="currentColor" width="26" height="26">
+          <path d="M10 20v-6h4v6h5v-8h3L12 3 2 12h3v8z"/>
+        </svg>
+      </button>
+
+      <!-- Achievements -->
+      <button class="bnav-btn" data-tab="achievements" aria-label="Achievements">
+        <svg viewBox="0 0 24 24" fill="currentColor" width="26" height="26">
+          <path d="M19 5h-2V3H7v2H5c-1.1 0-2 .9-2 2v1c0 2.55 1.92 4.63 4.39 4.94A5.01 5.01 0 0011 15.9V18H9v2h6v-2h-2v-2.1a5.01 5.01 0 003.61-2.96C19.08 12.63 21 10.55 21 8V7c0-1.1-.9-2-2-2z"/>
+        </svg>
+      </button>
+
+      <!-- AR FAB (centre) -->
+      <button class="bnav-fab" data-open-landmark-selection aria-label="Choose AR landmark">
+        <svg viewBox="0 0 24 24" fill="white" width="34" height="34">
+          <circle cx="12" cy="12" r="3.2"/>
+          <path d="M9 2L7.17 4H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V6c0-1.1-.9-2-2-2h-3.17L15 2H9zm3 15c-2.76 0-5-2.24-5-5s2.24-5 5-5 5 2.24 5 5-2.24 5-5 5z"/>
+        </svg>
+      </button>
+
+      <!-- Maps -->
+      <button class="bnav-btn" data-tab="maps" aria-label="Maps">
+        <svg viewBox="0 0 24 24" fill="currentColor" width="26" height="26">
+          <path d="M20.5 3l-.16.03L15 5.1 9 3 3.36 4.9c-.21.07-.36.25-.36.48V20.5c0 .28.22.5.5.5l.16-.03L9 18.9l6 2.1 5.64-1.9c.21-.07.36-.25.36-.48V3.5c0-.28-.22-.5-.5-.5zM15 19l-6-2.11V5l6 2.11V19z"/>
+        </svg>
+      </button>
+
+      <!-- Profile -->
+      <button class="bnav-btn" data-tab="profile" aria-label="Profile">
+        <svg viewBox="0 0 24 24" fill="currentColor" width="26" height="26">
+          <path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z"/>
+        </svg>
+      </button>
+
+    </div>
+  </nav>
+
+  <div id="landmarkSelectionModal" class="landmark-modal" aria-hidden="true">
+    <section class="landmark-picker" role="dialog" aria-modal="true" aria-labelledby="landmarkSelectionTitle">
+      <div class="landmark-picker-head">
+        <div>
+          <h2 id="landmarkSelectionTitle">Choose a landmark</h2>
+          <p>Select one destination to start KA-KALAKBAY AR navigation.</p>
+        </div>
+        <button id="landmarkSelectionClose" class="landmark-close" type="button" aria-label="Close landmark selection">x</button>
+      </div>
+      <div id="landmarkSelectionList" class="landmark-picker-grid"></div>
+    </section>
+  </div>
+
+  <div id="signoutModal" class="confirm-modal" aria-hidden="true">
+    <div class="confirm-modal-backdrop" data-close-signout></div>
+
+    <div class="confirm-modal-panel" role="dialog" aria-modal="true" aria-labelledby="signoutTitle">
+      <h2 id="signoutTitle">Sign out?</h2>
+      <p>Are you sure you want to sign out of KA-KALAKBAY?</p>
+
+      <div class="confirm-modal-actions">
+        <button type="button" class="btn confirm-cancel-btn" id="cancelSignoutBtn">
+          Cancel
+        </button>
+        <button type="button" class="btn confirm-signout-btn" id="confirmSignoutBtn">
+          Sign Out
+        </button>
+      </div>
+    </div>
+  </div>
+
+</div><!-- /shell -->
+
+
+<!-- ══════════════════════════════════════════════
+     SCRIPTS
+══════════════════════════════════════════════ -->
+<script type="module" src="js/dashboard.js"></script>
+
+<!-- Leaflet JS -->
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+</body>
+</html>
+

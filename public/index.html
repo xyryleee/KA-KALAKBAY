@@ -1,0 +1,151 @@
+﻿<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"/>
+  <meta name="theme-color" content="#27667B"/>
+  <title>KA-KALAKBAY — Discover Olongapo</title>
+  <link rel="stylesheet" href="css/style.css"/>
+  <style>
+    .hero-section {
+      width: 100%;
+      padding: clamp(1.5rem, 5vw, 2.5rem) var(--app-side-padding) clamp(2rem, 5vw, 3rem) !important;
+      background: var(--white);
+    }
+
+    .hero-section h1 {
+      font-size: clamp(1.75rem, 7vw, 3rem) !important;
+      line-height: .95;
+      text-align: center;
+    }
+
+    .hero-section > p {
+      width: min(100%, 560px);
+      margin-left: auto;
+      margin-right: auto;
+      font-size: clamp(.9rem, 2.6vw, 1.05rem) !important;
+    }
+
+    .cta-stack {
+      width: min(100%, 440px);
+      margin-inline: auto;
+    }
+
+    .cta-stack .btn,
+    .cta-stack a {
+      width: 100%;
+    }
+
+    .car-slide img {
+      width: 100%;
+      aspect-ratio: 16 / 10;
+      object-fit: cover;
+      display: block;
+    }
+
+    @media (max-width: 520px) {
+      .hero-section {
+        padding-inline: max(16px, var(--safe-left)) max(16px, var(--safe-right)) !important;
+      }
+
+      .cta-stack > div {
+        grid-template-columns: 1fr !important;
+      }
+    }
+  </style>
+</head>
+<body>
+<div id="appLoader" class="app-loader" aria-live="polite" aria-label="Loading KA-KALAKBAY">
+  <div class="app-loader-card">
+    <img
+      src="assets/images/KA-KALAKBAY.svg"
+      alt="KA-KALAKBAY Logo"
+      class="app-loader-logo"
+    />
+
+    <p id="appLoaderText" class="app-loader-text">Loading KA-KALAKBAY</p>
+
+    <div class="app-loader-dots" aria-hidden="true">
+      <span></span>
+      <span></span>
+      <span></span>
+    </div>
+  </div>
+</div>
+
+<div id="toast" class="toast"></div>
+
+<div class="shell">
+
+  <!-- ── TOP BAR ────────────────────────────────────────── -->
+  <header class="topbar">
+    <svg class="topbar-logo" viewBox="0 0 360 360" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+      <polygon points="68.58,302.06 125.97,302.06 125.97,193.1 217.49,302.06 290.92,302.06 189.24,186.09 290.4,70.03 217.69,69.52 126.49,173.45 126.49,69.52 68.58,69.52" fill="currentColor"/>
+      <rect x="103.03" y="163.68" width="44.21" height="44.21" fill="currentColor"/>
+      <path fill="#ED1C24" d="M249.14,297.74l-48.09-92.86c-13.13-25.35-4.4-56.54,19.98-71.39c17.28-10.53,38.97-10.58,56.3-0.14l0.18,0.11c24.63,14.83,33.44,46.29,20.1,71.76L249.14,297.74z"/>
+      <circle fill="#fff" cx="249.39" cy="178.41" r="33.24"/>
+    </svg>
+    <span class="topbar-title">KA-KALAKBAY</span>
+  </header>
+
+  <!-- ── CAROUSEL ──────────────────────────────────────── -->
+  <div class="carousel" id="carousel" aria-label="Landmark highlights">
+    <div class="car-track">
+      <div class="car-slide">
+        <img src="assets/images/spanish-gate.jpg"
+             alt="Spanish Gate, Olongapo City"/>
+      </div>
+      <div class="car-slide">
+        <img src="assets/images/city-hall.jpg"
+             alt="Olongapo City Hall"/>
+      </div>
+      <div class="car-slide">
+        <img src="assets/images/ulo-ng-apo.jpg"
+             alt="Ulo ng Apo Monument"/>
+      </div>
+    </div>
+    <button class="car-btn car-prev" aria-label="Previous">&#8249;</button>
+    <button class="car-btn car-next" aria-label="Next">&#8250;</button>
+    <div class="car-dots" aria-hidden="true">
+      <div class="car-dot active"></div>
+      <div class="car-dot"></div>
+      <div class="car-dot"></div>
+    </div>
+  </div>
+
+  <!-- ── HERO COPY ──────────────────────────────────────── -->
+  <section class="hero-section" style="padding:1.875rem 1.25rem 1.5rem;background:var(--white);">
+    <h1 style="font-size:clamp(1.55rem,7.5vw,2.5rem);line-height:.95;text-align:center;margin-bottom:.875rem;">
+      EXPERIENCE<br/>OLONGAPO CITY<br/>
+      <span class="text-cyan">LIKE NEVER BEFORE</span>
+    </h1>
+    <p style="font-size:clamp(.82rem,3.5vw,.97rem);text-align:center;line-height:1.6;color:var(--grey-t);margin-bottom:1.625rem;">
+      With KA-KALAKBAY, your ordinary travels become extraordinary experiences—bringing
+      Olongapo's history, culture, and landmarks to life through technology and exploration.
+    </p>
+
+    <div class="cta-stack">
+      <!-- Primary CTA -->
+      <a href="signup.html" class="btn btn-cta mb-2" style="margin-bottom:.75rem;">
+        GET STARTED
+      </a>
+
+      <!-- Secondary row -->
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:.75rem;margin-bottom:.875rem;">
+        <a href="login.html" class="btn btn-primary">Sign In</a>
+        <a href="camera.html" class="btn btn-camera" style="font-size:clamp(.78rem,3vw,.92rem);">
+          📷 AR Camera
+        </a>
+      </div>
+
+      <p class="text-center" style="font-size:.78rem;color:var(--grey-t);">
+        AR Camera works without an account.
+      </p>
+    </div>
+  </section>
+
+</div><!-- /shell -->
+
+<script type="module" src="js/index.js"></script>
+</body>
+</html>
