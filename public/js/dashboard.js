@@ -2,7 +2,7 @@
 import { onAuthStateChanged, signOut }
   from "https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js";
 import {
-  doc, updateDoc, getDoc, serverTimestamp, setDoc,
+  collection, doc, getDoc, getDocs, serverTimestamp, setDoc, updateDoc,
 } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
 import {
   applyAccessibilitySettings, applySettings, showToast, setLoading,
@@ -34,7 +34,7 @@ const LANDMARK_ID_ALIASES = {
 };
 
 function normalizeLandmarkId(raw) {
-  if (!raw) return null;
+  if (!raw) return "";
   const cleaned = String(raw).trim().toLowerCase();
   const underscored = cleaned.replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "");
   const hyphenated = underscored.replace(/_/g, "-");
@@ -172,8 +172,69 @@ document.getElementById("landmarkSelectionModal")?.addEventListener("click", (ev
 let currentUser = null;
 
 /* ── State: visited IDs fetched from Firestore ── */
-let visitedIds  = new Set();
-let totalXP     = 0;
+let visitedIds = new Set();
+let completedQuizIds = new Set();
+let totalXP = 0;
+let quizXP = 0;
+let quizzesByLandmarkId = {};
+let quizzesLoaded = false;
+
+function normalizeQuizRecord(quizId, data = {}) {
+  const landmarkId = normalizeLandmarkId(data.landmarkId || quizId);
+
+  if (!landmarkId) {
+    return null;
+  }
+
+  const choices = Array.isArray(data.choices)
+    ? data.choices.map((choice) => String(choice || "").trim()).filter(Boolean)
+    : [];
+  const question = String(data.question || "").trim();
+  const answer = String(data.answer || "").trim();
+
+  if (!question || !answer || choices.length === 0) {
+    return null;
+  }
+
+  return {
+    id: landmarkId,
+    landmarkId,
+    landmarkName: data.landmarkName || "",
+    question,
+    choices,
+    answer,
+    xpReward: Number(data.xpReward) || 50,
+    active: data.active !== false
+  };
+}
+
+async function loadAchievementQuizzes() {
+  if (quizzesLoaded) return;
+
+  quizzesByLandmarkId = {};
+
+  try {
+    const snapshot = await getDocs(collection(db, "quizzes"));
+
+    snapshot.docs.forEach((item) => {
+      const quiz = normalizeQuizRecord(item.id, item.data());
+
+      if (quiz?.active) {
+        quizzesByLandmarkId[quiz.landmarkId] = quiz;
+      }
+    });
+
+    quizzesLoaded = true;
+    console.log("[QUIZ LOAD] Loaded quizzes from Firestore:", quizzesByLandmarkId);
+    console.log("[QUIZ LOAD] Quiz count:", Object.keys(quizzesByLandmarkId || {}).length);
+  } catch (error) {
+    quizzesByLandmarkId = {};
+    quizzesLoaded = true;
+    console.error("[QUIZ LOAD] Failed to load quizzes from Firestore:", error);
+    console.log("[QUIZ LOAD] Quiz count:", Object.keys(quizzesByLandmarkId || {}).length);
+    showToast?.("Quiz unavailable. Please try again later.");
+  }
+}
 
 /* ════════════════════════════════════════════════
    AUTH GUARD
@@ -196,7 +257,10 @@ onAuthStateChanged(auth, async user => {
     await loadLandmarksForDashboard();
 
     setLoaderText("Loading achievements");
-    await loadAchievements();     // Fetch from Firestore
+    await Promise.all([
+      loadAchievements(),
+      loadAchievementQuizzes()
+    ]);
 
     updateStats();
     renderAchievements();
@@ -215,7 +279,9 @@ onAuthStateChanged(auth, async user => {
 ════════════════════════════════════════════════ */
 async function loadAchievements() {
   visitedIds.clear();
+  completedQuizIds.clear();
   totalXP = 0;
+  quizXP = 0;
 
   if (!currentUser) return;
 
@@ -237,9 +303,18 @@ async function loadAchievements() {
       visitedIds.add(normalizeLandmarkId(id));
     });
 
-    totalXP = Number(data.totalXP) || visitedIds.size * 100;
+    const completedQuizzes = Array.isArray(data.completedQuizzes)
+      ? data.completedQuizzes.map(normalizeLandmarkId).filter(Boolean)
+      : [];
+    completedQuizIds = new Set(completedQuizzes);
+    quizXP = Number(data.quizXP) || 0;
 
-    console.log(`[DASH] Account progress loaded: ${visitedIds.size}/${AR_LANDMARKS.length} visited, ${totalXP} XP`);
+    const storedTotalXP = Number(data.totalXP);
+    totalXP = Number.isFinite(storedTotalXP)
+      ? storedTotalXP
+      : visitedIds.size * 100 + quizXP;
+
+    console.log(`[DASH] Account progress loaded: ${visitedIds.size}/${AR_LANDMARKS.length} visited, ${completedQuizIds.size} quizzes, ${totalXP} XP`);
   } catch (err) {
     console.error("[DASH] Failed to load account progress:", err.message);
   }
@@ -255,16 +330,33 @@ async function saveAchievement(lm) {
   const progressRef = doc(db, "users", currentUser.uid, "progress", "summary");
 
   try {
-    if (visitedIds.has(normalizedId)) {
+    const snap = await getDoc(progressRef);
+    const data = snap.exists() ? snap.data() : {};
+    const visited = Array.isArray(data.visitedLandmarks)
+      ? data.visitedLandmarks.map(normalizeLandmarkId).filter(Boolean)
+      : Array.from(visitedIds);
+    const visitedSet = new Set(visited);
+
+    if (visitedSet.has(normalizedId)) {
       console.log("[DASH] Achievement already saved:", lm.name);
       return;
     }
 
-    visitedIds.add(normalizedId);
-    totalXP = visitedIds.size * 100;
+    visitedSet.add(normalizedId);
+    const updatedVisited = Array.from(visitedSet);
+    const storedQuizXP = Number(data.quizXP) || quizXP || 0;
+    const storedTotalXP = Number(data.totalXP);
+    const currentTotalXP = Number.isFinite(storedTotalXP)
+      ? storedTotalXP
+      : visited.length * 100 + storedQuizXP;
+    const visitReward = Number(lm.xp) || 100;
+
+    visitedIds = new Set(updatedVisited);
+    quizXP = storedQuizXP;
+    totalXP = currentTotalXP + visitReward;
 
     await setDoc(progressRef, {
-      visitedLandmarks: Array.from(visitedIds),
+      visitedLandmarks: updatedVisited,
       totalXP,
       updatedAt: serverTimestamp()
     }, { merge: true });
@@ -294,6 +386,254 @@ function isVisited(id) {
 function getVisitedCount() {
   return AR_LANDMARKS.filter((lm) => isVisited(lm.id)).length;
 }
+
+function getQuizForLandmark(landmarkId) {
+  const id = normalizeLandmarkId(landmarkId);
+  const quiz = quizzesByLandmarkId[id] || null;
+  console.log("[QUIZ LOOKUP]", { landmarkId: id, quizExists: Boolean(quiz) });
+  return quiz;
+}
+
+function isQuizCompleted(landmarkId) {
+  return completedQuizIds.has(normalizeLandmarkId(landmarkId));
+}
+
+async function awardQuizXP(landmarkId, quiz) {
+  const user = auth.currentUser;
+  const id = normalizeLandmarkId(landmarkId);
+  const reward = Number(quiz?.xpReward) || 50;
+
+  console.log("[QUIZ XP] Attempting award:", { landmarkId: id, reward });
+
+  if (!user) {
+    showToast?.("Sign in to save quiz XP.");
+    return "skipped";
+  }
+
+  try {
+    const progressRef = doc(db, "users", user.uid, "progress", "summary");
+    const snap = await getDoc(progressRef);
+    const data = snap.exists() ? snap.data() : {};
+    const visited = Array.isArray(data.visitedLandmarks)
+      ? data.visitedLandmarks.map(normalizeLandmarkId).filter(Boolean)
+      : [];
+
+    if (!visited.includes(id)) {
+      showToast?.("Visit this landmark in AR first to unlock the quiz.");
+      return "locked";
+    }
+
+    const completed = Array.isArray(data.completedQuizzes)
+      ? data.completedQuizzes.map(normalizeLandmarkId).filter(Boolean)
+      : [];
+
+    if (completed.includes(id)) {
+      completedQuizIds.add(id);
+      console.log("[QUIZ XP] Already completed:", id);
+      showToast?.("Quiz already completed. XP already claimed.");
+      return "existing";
+    }
+
+    const currentQuizXP = Number(data.quizXP) || 0;
+    const storedTotalXP = Number(data.totalXP);
+    const currentTotalXP = Number.isFinite(storedTotalXP)
+      ? storedTotalXP
+      : visited.length * 100 + currentQuizXP;
+    const updatedCompleted = Array.from(new Set([...completed, id]));
+    const updatedQuizXP = currentQuizXP + reward;
+    const updatedTotalXP = currentTotalXP + reward;
+
+    await setDoc(progressRef, {
+      completedQuizzes: updatedCompleted,
+      quizXP: updatedQuizXP,
+      totalXP: updatedTotalXP,
+      updatedAt: serverTimestamp()
+    }, { merge: true });
+
+    completedQuizIds = new Set(updatedCompleted);
+    quizXP = updatedQuizXP;
+    totalXP = updatedTotalXP;
+
+    console.log("[QUIZ XP] Awarded:", { landmarkId: id, reward });
+    console.log("[QUIZ XP] Progress updated.");
+    showToast?.(`Correct! +${reward} XP earned.`);
+    return "saved";
+  } catch (error) {
+    console.error("[QUIZ XP] Failed to update progress:", error);
+    showToast?.("Unable to save quiz XP.");
+    return "error";
+  }
+}
+
+function openAchievementQuiz(landmarkId, landmarkName, visited = isVisited(landmarkId)) {
+  const normalizedId = normalizeLandmarkId(landmarkId);
+  const quiz = getQuizForLandmark(normalizedId);
+
+  if (!quiz) {
+    console.warn("[ACHIEVEMENT QUIZ] No quiz found for:", landmarkId);
+    showToast?.("Quiz unavailable.");
+    return;
+  }
+
+  if (!visited) {
+    showToast?.("Visit this landmark in AR first to unlock the quiz.");
+    return;
+  }
+
+  if (isQuizCompleted(normalizedId)) {
+    showToast?.("Quiz already completed. XP already claimed.");
+    return;
+  }
+
+  const modal = document.getElementById("achievementQuizModal");
+  const title = document.getElementById("achievementQuizTitle");
+  const helper = document.getElementById("achievementQuizHelper");
+  const question = document.getElementById("achievementQuizQuestion");
+  const choices = document.getElementById("achievementQuizChoices");
+  const feedback = document.getElementById("achievementQuizFeedback");
+
+  if (!modal || !title || !helper || !question || !choices || !feedback) {
+    console.error("[ACHIEVEMENT QUIZ] Quiz modal elements are missing.");
+    return;
+  }
+
+  title.textContent = `${landmarkName || "Landmark"} Quiz`;
+  helper.textContent = "Answer one quick question based on what you learned from this landmark.";
+
+  question.textContent = quiz.question;
+  choices.innerHTML = "";
+  feedback.textContent = "";
+
+  quiz.choices.forEach((choice) => {
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = "achievement-quiz-choice-btn";
+    btn.textContent = choice;
+
+    btn.addEventListener("click", () => {
+      handleAchievementQuizAnswer(choice, quiz, normalizedId);
+    });
+
+    choices.appendChild(btn);
+  });
+
+  modal.classList.add("show");
+  modal.setAttribute("aria-hidden", "false");
+  document.body.classList.add("quiz-open");
+
+  setTimeout(() => {
+    choices.querySelector("button")?.focus();
+  }, 50);
+}
+
+async function handleAchievementQuizAnswer(choice, quiz, landmarkId) {
+  const answer = quiz?.answer || "";
+  const reward = Number(quiz?.xpReward) || 50;
+  const isCorrect = choice === answer;
+  const choices = document.getElementById("achievementQuizChoices");
+  const feedback = document.getElementById("achievementQuizFeedback");
+
+  choices?.querySelectorAll("button").forEach((btn) => {
+    btn.disabled = true;
+
+    if (btn.textContent === answer) {
+      btn.classList.add("correct");
+    }
+
+    if (btn.textContent === choice && !isCorrect) {
+      btn.classList.add("wrong");
+    }
+  });
+
+  if (feedback) {
+    feedback.textContent = isCorrect
+      ? `Correct! Saving +${reward} XP...`
+      : `Almost! The correct answer is: ${answer}`;
+  }
+
+  if (!isCorrect) {
+    return;
+  }
+
+  const status = await awardQuizXP(landmarkId, quiz);
+
+  if (feedback) {
+    if (status === "saved") {
+      feedback.textContent = `Correct! +${reward} XP earned.`;
+    } else if (status === "existing") {
+      feedback.textContent = "Quiz already completed. XP already claimed.";
+    } else if (status === "locked") {
+      feedback.textContent = "Visit this landmark in AR first to unlock the quiz.";
+    } else {
+      feedback.textContent = "Correct, but XP could not be saved. Please try again.";
+    }
+  }
+
+  if (status === "saved" || status === "existing") {
+    updateStats();
+    renderAchievements();
+  }
+}
+
+function closeAchievementQuiz() {
+  const modal = document.getElementById("achievementQuizModal");
+
+  modal?.classList.remove("show");
+  modal?.setAttribute("aria-hidden", "true");
+  document.body.classList.remove("quiz-open");
+}
+
+function bindAchievementQuizButtons() {
+  document.querySelectorAll("[data-quiz-landmark-id]").forEach((button) => {
+    button.addEventListener("click", (event) => {
+      event.stopPropagation();
+      const landmarkId = button.dataset.quizLandmarkId;
+      const landmarkName = button.dataset.quizLandmarkName || "Landmark";
+      const isVisited = button.dataset.quizVisited === "true";
+      const isCompleted = button.dataset.quizCompleted === "true";
+      const quiz = getQuizForLandmark(landmarkId);
+
+      if (!quiz) {
+        console.log("[ACHIEVEMENT QUIZ] No quiz available for:", landmarkId);
+
+        if (typeof showToast === "function") {
+          showToast("No quiz is available for this landmark.");
+        }
+
+        return;
+      }
+
+      if (isCompleted) {
+        showToast?.("Quiz already completed. XP already claimed.");
+        return;
+      }
+
+      if (!isVisited || button.disabled) {
+        console.log("[ACHIEVEMENT QUIZ] Quiz locked until visited:", landmarkId);
+
+        if (typeof showToast === "function") {
+          showToast("Visit this landmark in AR first to unlock the quiz.");
+        } else {
+          alert("Visit this landmark in AR first to unlock the quiz.");
+        }
+
+        return;
+      }
+
+      openAchievementQuiz(landmarkId, landmarkName, true);
+    });
+  });
+}
+
+document
+  .getElementById("closeAchievementQuizBtn")
+  ?.addEventListener("click", closeAchievementQuiz);
+
+document.getElementById("achievementQuizModal")?.addEventListener("click", (event) => {
+  if (event.target.id === "achievementQuizModal") {
+    closeAchievementQuiz();
+  }
+});
 
 function updateStats() {
   const total   = AR_LANDMARKS.length;
@@ -384,6 +724,26 @@ function renderAchievements() {
 
   AR_LANDMARKS.forEach((lm, i) => {
     const visited = isVisited(lm.id);
+    const quizLandmarkId = normalizeLandmarkId(lm.id);
+    const quiz = getQuizForLandmark(quizLandmarkId);
+    const hasQuiz = Boolean(quiz);
+    const quizCompleted = isQuizCompleted(quizLandmarkId);
+    const visitStatusLabel = visited ? "Visited" : "Not Visited";
+    const visitStatusClass = visited ? "visited" : "not-visited";
+    const safeQuizLandmarkId = escapeHTML(quizLandmarkId);
+    const safeQuizLandmarkName = escapeHTML(lm.name || "Landmark");
+    const quizButtonLabel = quizCompleted ? "Quiz Completed" : "Take Quiz";
+    const quizButtonClass = [
+      "achievement-action-btn",
+      "achievement-quiz-btn",
+      visited ? "" : "is-locked",
+      quizCompleted ? "is-completed" : ""
+    ].filter(Boolean).join(" ");
+    const quizButtonAttrs = !visited
+      ? ` disabled aria-disabled="true" title="Visit this landmark in AR first to unlock the quiz."`
+      : quizCompleted
+        ? ` disabled aria-disabled="true" title="Quiz already completed. XP already claimed."`
+        : "";
     const item = document.createElement("div");
     item.className  = `ach-item${visited ? " visited" : ""}`;
     item.dataset.id = lm.id;
@@ -396,17 +756,27 @@ function renderAchievements() {
       <div class="ach-info">
         <div class="ach-name">${lm.name}</div>
         <div class="ach-cat">${lm.category || ''}</div>
+        <span class="achievement-visit-status ${visitStatusClass}">
+          ${visitStatusLabel}
+        </span>
         <div class="ach-badge">+100 XP</div>
       </div>
-      <div style="display:flex;flex-direction:column;align-items:flex-end;gap:6px;flex-shrink:0;">
+      <div class="ach-actions achievement-card-actions">
         <span class="ach-check" aria-hidden="true">✅</span>
-        <button class="visit-ar-btn" data-id="${lm.id}"
-                style="font-size:.65rem;padding:4px 10px;
-                       background:var(--cyan);color:#fff;
-                       border:none;border-radius:99px;cursor:pointer;
-                       white-space:nowrap;line-height:1.4;"
+        ${hasQuiz ? `
+          <button
+            type="button"
+            class="${quizButtonClass}"
+            data-quiz-landmark-id="${safeQuizLandmarkId}"
+            data-quiz-landmark-name="${safeQuizLandmarkName}"
+            data-quiz-visited="${visited ? "true" : "false"}"
+            data-quiz-completed="${quizCompleted ? "true" : "false"}"${quizButtonAttrs}>
+            ${quizButtonLabel}
+          </button>
+        ` : ""}
+        <button class="visit-ar-btn" type="button" data-id="${lm.id}"
                 aria-label="Visit ${lm.name} in AR">
-          Visit
+          Visit in AR
         </button>
       </div>`;
 
@@ -425,12 +795,17 @@ function renderAchievements() {
       openARForLandmark(lm);
     });
 
+    item.querySelector(".achievement-card-actions")?.addEventListener("click", (e) => {
+      e.stopPropagation();
+    });
+
     item.addEventListener("click", () => openARForLandmark(lm));
 
     list.appendChild(item);
   });
 
   updateAchievementStats();
+  bindAchievementQuizButtons();
 }
 
 function applyDashboardRevealAnimations(scope = document) {
@@ -489,7 +864,10 @@ window.switchTab = function(tab) {
   document.getElementById("tab-title").textContent = TITLES[tab] || "KA-KALAKBAY";
 
   if (tab === "achievements") {
-    loadAchievements().then(() => {
+    Promise.all([
+      loadAchievements(),
+      loadAchievementQuizzes()
+    ]).then(() => {
       renderAchievements();
       updateAchievementStats();
       applyDashboardRevealAnimations();
@@ -595,11 +973,15 @@ document.getElementById("reset-btn").addEventListener("click", async () => {
   try {
     await setDoc(progressRef, {
       visitedLandmarks: [],
+      completedQuizzes: [],
+      quizXP: 0,
       totalXP: 0,
       updatedAt: serverTimestamp()
     }, { merge: true });
 
     visitedIds.clear();
+    completedQuizIds.clear();
+    quizXP = 0;
     totalXP = 0;
 
     updateStats();
@@ -659,6 +1041,7 @@ document.getElementById("confirmSignoutBtn")?.addEventListener("click", async ()
 
 document.addEventListener("keydown", (event) => {
   if (event.key === "Escape") {
+    closeAchievementQuiz();
     closeSignoutModal();
   }
 });

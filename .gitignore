@@ -71,6 +71,9 @@ node_modules/
 
 # Firebase service account credentials
 *firebase-adminsdk*.json
+serviceAccountKey.json
 
 # dataconnect generated files
 .dataconnect
+
+.py

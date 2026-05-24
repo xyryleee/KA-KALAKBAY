@@ -395,6 +395,13 @@
 
     /* Not visited → greyscale */
     .ach-item:not(.visited) {
+      filter: none;
+      opacity: 1;
+    }
+
+    .ach-item:not(.visited) .ach-thumb,
+    .ach-item:not(.visited) .ach-name,
+    .ach-item:not(.visited) .ach-cat {
       filter: grayscale(100%);
       opacity: .72;
     }
@@ -534,25 +541,38 @@
     }
     .ach-item.visited .ach-check { opacity: 1; }
 
-    .ach-actions {
-      display: flex;
-      flex-direction: column;
-      align-items: flex-end;
-      gap: 6px;
+    .ach-actions,
+    .achievement-card-actions {
+      display: grid;
+      gap: 0.55rem;
+      width: min(150px, 38vw);
       flex-shrink: 0;
+      margin-top: 0.85rem;
+      align-items: stretch;
     }
 
-    .visit-ar-btn,
-    .osm-link-btn {
+    .ach-actions .ach-check {
+      justify-self: end;
+    }
+
+    .achievement-action-btn,
+    .achievement-quiz-btn,
+    .visit-ar-btn {
+      min-height: 42px;
       min-width: 86px;
-      border: none;
       border-radius: 999px;
-      padding: 6px 10px;
-      font-size: .65rem;
-      font-weight: 700;
-      line-height: 1.2;
+      padding: 0.65rem 0.9rem;
+      font-size: 0.88rem;
+      font-weight: 900;
+      line-height: 1;
+      text-align: center;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      text-decoration: none;
       cursor: pointer;
       white-space: nowrap;
+      border: none;
     }
 
     .visit-ar-btn {
@@ -560,8 +580,6 @@
       color: #ffffff !important;
       border: none !important;
       border-radius: 999px;
-      font-weight: 800;
-      cursor: pointer;
       box-shadow: 0 8px 20px rgba(0, 180, 216, 0.22);
       transition:
         transform 0.2s ease,
@@ -579,6 +597,60 @@
       transform: translateY(0);
     }
 
+    .achievement-card-actions .achievement-action-btn,
+    .achievement-card-actions .visit-ar-btn {
+      width: 100%;
+    }
+
+    .achievement-quiz-btn {
+      border: 1px solid rgba(221, 235, 157, 0.45);
+      color: #0A1628;
+      background: linear-gradient(135deg, #DDEB9D, #ffffff);
+      box-shadow: 0 8px 18px rgba(221, 235, 157, 0.18);
+      transition: transform 160ms ease, box-shadow 160ms ease;
+    }
+
+    .achievement-quiz-btn.is-locked,
+    .achievement-quiz-btn:disabled {
+      cursor: not-allowed;
+      opacity: 0.55;
+      filter: grayscale(0.25);
+      box-shadow: none;
+    }
+
+    .achievement-quiz-btn:active {
+      transform: scale(0.98);
+    }
+
+    .achievement-visit-status {
+      display: inline-flex;
+      align-items: center;
+      width: fit-content;
+      border-radius: 999px;
+      padding: 0.35rem 0.65rem;
+      margin-top: 0.4rem;
+      font-size: 0.75rem;
+      font-weight: 900;
+      letter-spacing: 0.02em;
+    }
+
+    .achievement-visit-status.visited {
+      color: #0A1628;
+      background: #DDEB9D;
+    }
+
+    .achievement-visit-status.not-visited {
+      color: #27667B;
+      background: rgba(39, 102, 123, 0.1);
+      border: 1px solid rgba(39, 102, 123, 0.18);
+    }
+
+    :root.dark .achievement-visit-status.not-visited {
+      color: rgba(255, 255, 255, 0.86);
+      background: rgba(255, 255, 255, 0.14);
+      border-color: rgba(255, 255, 255, 0.18);
+    }
+
     .ach-item.visited .visit-ar-btn,
     .ach-item:not(.visited) .visit-ar-btn {
       background: linear-gradient(135deg, #00B4D8, #27667B) !important;
@@ -590,6 +662,144 @@
       background: rgba(39,102,123,.12);
       color: #27667B;
       border: 1px solid rgba(39,102,123,.22);
+    }
+
+    .achievement-quiz-modal {
+      position: fixed;
+      inset: 0;
+      z-index: 99999;
+      display: none;
+      align-items: center;
+      justify-content: center;
+      padding: 1.25rem;
+      background:
+        radial-gradient(circle at top, rgba(0, 180, 216, 0.2), transparent 38%),
+        rgba(10, 22, 40, 0.78);
+      backdrop-filter: blur(10px);
+    }
+
+    .achievement-quiz-modal.show {
+      display: flex !important;
+    }
+
+    .achievement-quiz-card {
+      position: relative;
+      width: min(92vw, 440px);
+      border-radius: 28px;
+      padding: 1.45rem;
+      background:
+        linear-gradient(145deg, rgba(10, 22, 40, 0.98), rgba(39, 102, 123, 0.95));
+      color: #ffffff;
+      box-shadow: 0 24px 60px rgba(0, 0, 0, 0.42);
+      border: 1px solid rgba(221, 235, 157, 0.34);
+      animation: achievementQuizSlideUp 220ms ease-out both;
+    }
+
+    @keyframes achievementQuizSlideUp {
+      from {
+        opacity: 0;
+        transform: translateY(18px) scale(0.98);
+      }
+
+      to {
+        opacity: 1;
+        transform: translateY(0) scale(1);
+      }
+    }
+
+    .achievement-quiz-close {
+      position: absolute;
+      top: 0.9rem;
+      right: 0.9rem;
+      width: 36px;
+      height: 36px;
+      border: none;
+      border-radius: 999px;
+      background: rgba(255, 255, 255, 0.14);
+      color: #ffffff;
+      font-size: 1.4rem;
+      font-weight: 900;
+      cursor: pointer;
+    }
+
+    .achievement-quiz-eyebrow {
+      margin: 0 0 0.45rem;
+      color: #DDEB9D;
+      font-weight: 900;
+      letter-spacing: 0.14em;
+      font-size: 0.76rem;
+      text-transform: uppercase;
+    }
+
+    .achievement-quiz-card h2 {
+      margin: 0 2.3rem 0.5rem 0;
+      color: #ffffff;
+      font-size: clamp(1.28rem, 4vw, 1.55rem);
+      line-height: 1.12;
+      font-weight: 900;
+    }
+
+    .achievement-quiz-helper {
+      margin: 0 0 1rem;
+      color: rgba(255, 255, 255, 0.82);
+      line-height: 1.5;
+      font-size: 0.92rem;
+    }
+
+    .achievement-quiz-card h3 {
+      margin: 0 0 1rem;
+      color: #ffffff;
+      font-size: 1.05rem;
+      line-height: 1.35;
+      font-weight: 900;
+    }
+
+    .achievement-quiz-choices {
+      display: grid;
+      gap: 0.7rem;
+    }
+
+    .achievement-quiz-choice-btn {
+      width: 100%;
+      border-radius: 999px;
+      padding: 0.85rem 1rem;
+      text-align: left;
+      font-weight: 900;
+      cursor: pointer;
+      background: rgba(255, 255, 255, 0.12);
+      color: #ffffff;
+      border: 1px solid rgba(255, 255, 255, 0.18);
+      transition: transform 160ms ease, background 160ms ease, border-color 160ms ease;
+    }
+
+    .achievement-quiz-choice-btn:hover {
+      background: rgba(0, 180, 216, 0.22);
+      border-color: rgba(0, 180, 216, 0.52);
+    }
+
+    .achievement-quiz-choice-btn:active {
+      transform: scale(0.98);
+    }
+
+    .achievement-quiz-choice-btn.correct {
+      background: rgba(221, 235, 157, 0.24);
+      border-color: #DDEB9D;
+    }
+
+    .achievement-quiz-choice-btn.wrong {
+      background: rgba(255, 88, 88, 0.25);
+      border-color: #ff5858;
+    }
+
+    .achievement-quiz-feedback {
+      min-height: 1.4rem;
+      margin-top: 0.9rem;
+      font-weight: 800;
+      color: #DDEB9D;
+    }
+
+    body.quiz-open {
+      overflow: hidden;
     }
 
     .landmark-modal {
@@ -926,12 +1136,26 @@
         transform: none !important;
         animation: none !important;
       }
+
+      .achievement-quiz-card,
+      .achievement-quiz-choice-btn,
+      .achievement-quiz-btn {
+        animation: none;
+        transition: none;
+      }
     }
 
     :root.kk-reduced-motion .reveal-up {
       opacity: 1 !important;
       transform: none !important;
       animation: none !important;
+    }
+
+    :root.kk-reduced-motion .achievement-quiz-card,
+    :root.kk-reduced-motion .achievement-quiz-choice-btn,
+    :root.kk-reduced-motion .achievement-quiz-btn {
+      animation: none;
+      transition: none;
     }
 
     #landmark-list,
@@ -1035,9 +1259,11 @@
         align-items: stretch;
       }
 
+      .achievement-action-btn,
+      .achievement-quiz-btn,
       .visit-ar-btn,
       .osm-link-btn {
-        min-height: 36px;
+        min-height: 42px;
       }
     }
 
@@ -1045,6 +1271,7 @@
       .ach-item {
         align-items: flex-start;
         gap: .75rem;
+        flex-wrap: wrap;
       }
 
       .ach-thumb {
@@ -1054,8 +1281,14 @@
 
       .ach-actions {
         width: 100%;
+        align-items: stretch;
         margin-top: .5rem;
         grid-column: 1 / -1;
+      }
+
+      .achievement-quiz-card {
+        padding: 1.25rem;
+        border-radius: 24px;
       }
 
       .landmark-pick-card {
@@ -1425,6 +1658,29 @@
 
 </div><!-- /shell -->
 
+<div id="achievementQuizModal" class="achievement-quiz-modal" aria-hidden="true">
+  <div class="achievement-quiz-card">
+    <button
+      id="closeAchievementQuizBtn"
+      type="button"
+      class="achievement-quiz-close"
+      aria-label="Close quiz">
+      ×
+    </button>
+
+    <p class="achievement-quiz-eyebrow">LAKBAY QUIZ</p>
+    <h2 id="achievementQuizTitle">Landmark Quiz</h2>
+    <p id="achievementQuizHelper" class="achievement-quiz-helper">
+      Answer one quick question about this landmark.
+    </p>
+
+    <h3 id="achievementQuizQuestion">Question appears here</h3>
+
+    <div id="achievementQuizChoices" class="achievement-quiz-choices"></div>
+
+    <p id="achievementQuizFeedback" class="achievement-quiz-feedback" aria-live="polite"></p>
+  </div>
+</div>
 
 <!-- ══════════════════════════════════════════════
      SCRIPTS

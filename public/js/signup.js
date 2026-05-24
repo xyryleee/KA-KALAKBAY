@@ -67,6 +67,8 @@ async function createUserDoc(user) {
 
     await setDoc(doc(db, "users", user.uid, "progress", "summary"), {
       visitedLandmarks: [],
+      completedQuizzes: [],
+      quizXP: 0,
       totalXP: 0,
       updatedAt: serverTimestamp()
     }, { merge: true });

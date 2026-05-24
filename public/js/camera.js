@@ -32,13 +32,34 @@ const CONFIG = Object.freeze({
 });
 
 const LOCATION_AR_CONFIG = {
-  heightY: 1.6,
-  baseScale: 1.15,
-  billboardFlip: false,
   useReadableZoneAnchor: true,
-  rightOffset: 1.6,
-  forwardDistance: 4.5,
-  verticalOffset: 0.2
+
+  placement: {
+    x: 0.65,
+    y: 0.05,
+    z: -5.5
+  },
+
+  card: {
+    width: 4.4,
+    height: 2.0,
+    scale: 2.0
+  },
+
+  texture: {
+    width: 1000,
+    height: 700,
+    titleSize: 52,
+    headingSize: 40,
+    bodySize: 30,
+    padding: 46,
+    radius: 42
+  },
+
+  billboard: {
+    enabled: true,
+    flip: false
+  }
 };
 
 const AR_FONT_FAMILY = "Arial, Helvetica, sans-serif";
@@ -53,7 +74,10 @@ const LANDMARK_ID_ALIASES = {
   diocese_columban: "columban",
   city_hall: "city-hall",
   spanish_gate: "spanish-gate",
-  ulo_ng_apo: "ulo-ng-apo"
+  ulo_ng_apo: "ulo-ng-apo",
+  marikit_park: "marikit-park",
+  rizal_triangle: "rizal-triangle",
+  gordon_college: "gordon-college"
 };
 
 const DOM = {};
@@ -76,8 +100,11 @@ const state = {
   miniMapUserMarker: null,
   miniMapLandmarkMarker: null,
   miniMapRouteLine: null,
+  miniMapRouteAbortController: null,
   miniMapAccuracyCircle: null,
   lastMiniMapUpdate: 0,
+  lastMiniMapRouteKey: "",
+  lastMiniMapRouteAt: 0,
   userHeading: 0,
   miniMapHeadingStarted: false
 };
@@ -187,42 +214,48 @@ function registerBillboardComponent() {
 }
 
 function logARCalibrationStatus() {
-  console.log("[AR CALIBRATION] Billboard enabled on AR content root.");
+  console.log("[AR CALIBRATION] Billboard enabled on AR card root.");
   console.log("[AR CALIBRATION] Readable zone anchor:", LOCATION_AR_CONFIG.useReadableZoneAnchor);
   console.log("[AR DISPLAY] Using canvas texture panels for text.");
   console.log("[AR DISPLAY] Font:", AR_FONT_FAMILY);
-  console.log("[AR DISPLAY] Scale:", LOCATION_AR_CONFIG.baseScale);
-  console.log("[AR DISPLAY] Height:", LOCATION_AR_CONFIG.heightY);
-  console.log("[AR DISPLAY] Billboard flip:", LOCATION_AR_CONFIG.billboardFlip);
-  console.log("[AR DISPLAY] Right offset:", LOCATION_AR_CONFIG.rightOffset);
-  console.log("[AR DISPLAY] Forward distance:", LOCATION_AR_CONFIG.forwardDistance);
+  console.log("[AR DISPLAY] Placement:", LOCATION_AR_CONFIG.placement);
+  console.log("[AR DISPLAY] Card:", LOCATION_AR_CONFIG.card);
+  console.log("[AR DISPLAY] Texture:", LOCATION_AR_CONFIG.texture);
+  console.log("[AR DISPLAY] Billboard:", LOCATION_AR_CONFIG.billboard);
   console.log("[AR TRANSFORM] Anchor controls position only.");
   console.log("[AR TRANSFORM] Billboard root controls rotation only.");
   console.log("[AR TRANSFORM] Card root controls scale only.");
-  console.log("[AR TRANSFORM] Planes have fixed dimensions only.");
+  console.log("[AR TRANSFORM] Single plane controls physical dimensions only.");
   console.log("[AR TRANSFORM] look-at removed; using face-camera-y only.");
 }
 
-function applyReadableARPlacementFromURL() {
+function applyARDisplayOverridesFromURL() {
   const params = new URLSearchParams(window.location.search);
 
-  const right = Number(params.get("rightOffset"));
-  const forward = Number(params.get("forwardDistance"));
-  const height = Number(params.get("arHeight"));
+  const overrideMap = [
+    ["arX", ["placement", "x"]],
+    ["arY", ["placement", "y"]],
+    ["arZ", ["placement", "z"]],
+    ["arScale", ["card", "scale"]],
+    ["arW", ["card", "width"]],
+    ["arH", ["card", "height"]]
+  ];
 
-  if (Number.isFinite(right)) {
-    LOCATION_AR_CONFIG.rightOffset = right;
-  }
+  overrideMap.forEach(([paramName, path]) => {
+    if (!params.has(paramName)) return;
 
-  if (Number.isFinite(forward)) {
-    LOCATION_AR_CONFIG.forwardDistance = forward;
-  }
+    const rawValue = params.get(paramName);
+    if (rawValue === null || rawValue.trim() === "") return;
 
-  if (Number.isFinite(height)) {
-    LOCATION_AR_CONFIG.heightY = height;
-  }
+    const value = Number(rawValue);
 
-  console.log("[READABLE AR CONFIG]", LOCATION_AR_CONFIG);
+    if (!Number.isFinite(value)) return;
+
+    const [section, key] = path;
+    LOCATION_AR_CONFIG[section][key] = value;
+  });
+
+  console.log("[AR CONFIG] Final modular AR display config:", JSON.parse(JSON.stringify(LOCATION_AR_CONFIG)));
 }
 
 function isValidARLandmark(landmark) {
@@ -269,23 +302,52 @@ function limitARText(text, max = 180) {
   return value.length > max ? `${value.slice(0, max).trim()}...` : value;
 }
 
-function createTextTexture(id, options = {}) {
+function getLandmarkARInfoBullets(landmark) {
+  if (!landmark) return [];
+
+  if (Array.isArray(landmark.arInfo) && landmark.arInfo.length) {
+    return landmark.arInfo
+      .map((item) => String(item || "").trim())
+      .filter(Boolean)
+      .slice(0, 4);
+  }
+
+  const fallback = [];
+
+  if (landmark.history) {
+    fallback.push(limitARText(landmark.history, 120));
+  }
+
+  if (landmark.desc) {
+    fallback.push(limitARText(landmark.desc, 120));
+  }
+
+  if (!fallback.length && landmark.description) {
+    fallback.push(limitARText(landmark.description, 120));
+  }
+
+  return fallback.slice(0, 4);
+}
+
+function formatBulletText(items) {
+  return items.map((item) => `• ${item}`).join("\n");
+}
+
+function createARInfoCardTexture(id, landmark) {
+  const name = String(landmark?.name || "Landmark").toUpperCase();
+  const bullets = getLandmarkARInfoBullets(landmark);
+  const bulletText =
+    formatBulletText(bullets) || "• Landmark information will appear here.";
+
   const {
-    width = 1024,
-    height = 512,
-    background = "#ffffff",
-    title = "",
-    body = "",
-    titleColor = "#0A1628",
-    bodyColor = "#0A1628",
-    titleSize = 64,
-    bodySize = 42,
-    titleWeight = 900,
-    bodyWeight = 800,
-    padding = 56,
-    radius = 40,
-    align = "left"
-  } = options;
+    width,
+    height,
+    titleSize,
+    headingSize,
+    bodySize,
+    padding,
+    radius
+  } = LOCATION_AR_CONFIG.texture;
 
   const canvas = document.createElement("canvas");
   canvas.width = width;
@@ -297,36 +359,50 @@ function createTextTexture(id, options = {}) {
 
   ctx.clearRect(0, 0, width, height);
 
-  ctx.fillStyle = background;
+  ctx.fillStyle = "#0A1628";
   roundCanvasRect(ctx, 0, 0, width, height, radius);
   ctx.fill();
 
+  const titleBoxHeight = 135;
+
+  ctx.fillStyle = "#FFFFFF";
+  roundCanvasRect(ctx, padding, padding, width - padding * 2, titleBoxHeight, 32);
+  ctx.fill();
+
   ctx.textBaseline = "top";
-  ctx.textAlign = align;
+  ctx.textAlign = "center";
+  ctx.fillStyle = "#0A1628";
+  ctx.font = `900 ${titleSize}px ${AR_FONT_FAMILY}`;
 
-  const textX = align === "center" ? width / 2 : padding;
+  wrapCanvasText(
+    ctx,
+    name,
+    width / 2,
+    padding + 36,
+    width - padding * 3,
+    titleSize * 1.15,
+    "center"
+  );
 
-  if (title) {
-    ctx.fillStyle = titleColor;
-    ctx.font = `${titleWeight} ${titleSize}px ${AR_FONT_FAMILY}`;
-    ctx.fillText(title, textX, padding);
-  }
+  const infoTop = padding + titleBoxHeight + 44;
 
-  if (body) {
-    ctx.fillStyle = bodyColor;
-    ctx.font = `${bodyWeight} ${bodySize}px ${AR_FONT_FAMILY}`;
+  ctx.textAlign = "left";
+  ctx.fillStyle = "#DDEB9D";
+  ctx.font = `900 ${headingSize}px ${AR_FONT_FAMILY}`;
+  ctx.fillText("AR INFORMATION", padding, infoTop);
 
-    const bodyY = title ? padding + titleSize + 32 : padding;
-    wrapCanvasText(
-      ctx,
-      body,
-      textX,
-      bodyY,
-      width - padding * 2,
-      bodySize * 1.35,
-      align
-    );
-  }
+  ctx.fillStyle = "#FFFFFF";
+  ctx.font = `800 ${bodySize}px ${AR_FONT_FAMILY}`;
+
+  wrapCanvasText(
+    ctx,
+    bulletText,
+    padding,
+    infoTop + headingSize + 34,
+    width - padding * 2,
+    bodySize * 1.45,
+    "left"
+  );
 
   return canvas;
 }
@@ -344,24 +420,31 @@ function roundCanvasRect(ctx, x, y, width, height, radius) {
 }
 
 function wrapCanvasText(ctx, text, x, y, maxWidth, lineHeight, align = "left") {
-  const words = String(text || "").split(/\s+/);
-  let line = "";
+  const paragraphs = String(text || "").split("\n");
 
-  for (const word of words) {
-    const testLine = line ? `${line} ${word}` : word;
-    const metrics = ctx.measureText(testLine);
+  for (const paragraph of paragraphs) {
+    const words = paragraph.split(/\s+/).filter(Boolean);
+    let line = "";
 
-    if (metrics.width > maxWidth && line) {
-      ctx.fillText(line, x, y);
-      line = word;
-      y += lineHeight;
-    } else {
-      line = testLine;
+    for (const word of words) {
+      const testLine = line ? `${line} ${word}` : word;
+      const metrics = ctx.measureText(testLine);
+
+      if (metrics.width > maxWidth && line) {
+        ctx.fillText(line, x, y);
+        line = word;
+        y += lineHeight;
+      } else {
+        line = testLine;
+      }
     }
-  }
 
-  if (line) {
-    ctx.fillText(line, x, y);
+    if (line) {
+      ctx.fillText(line, x, y);
+      y += lineHeight;
+    }
+
+    y += lineHeight * 0.16;
   }
 }
 
@@ -518,6 +601,7 @@ function showMissingSelectionState() {
   DOM.hud?.classList.remove("active");
   DOM.bottomBar?.classList.remove("active");
   setCameraMiniMapVisible(false);
+  clearMinimapRoute();
 }
 
 function showCameraError(message) {
@@ -652,16 +736,13 @@ function buildLandmarkSpeechText() {
   }
 
   const name = lm.name || "Selected landmark";
-  const history =
-    lm.history ||
-    lm.desc ||
-    "No history is available for this landmark.";
-  const description =
-    lm.description ||
-    lm.desc ||
-    "No description is available for this landmark.";
+  const bullets = getLandmarkARInfoBullets(lm);
 
-  return `${name}. History. ${history}. Description. ${description}`;
+  if (!bullets.length) {
+    return `${name}. No AR information is available for this landmark.`;
+  }
+
+  return `${name}. AR information. ${bullets.join(". ")}.`;
 }
 
 function stopLandmarkSpeech() {
@@ -765,12 +846,8 @@ function initCameraMiniMap() {
   }
 
   if (state.miniMap) {
-    if (state.miniMapRouteLine) {
-      state.miniMap.removeLayer(state.miniMapRouteLine);
-      state.miniMapRouteLine = null;
-    }
-
     setTimeout(() => state.miniMap.invalidateSize(), 100);
+    void updateMinimapOSRMRoute();
     return;
   }
 
@@ -808,6 +885,7 @@ function initCameraMiniMap() {
   }, 250);
 
   console.log("[CAMERA MINIMAP] Initialized.");
+  void updateMinimapOSRMRoute();
 }
 
 function createMiniMapUserIcon(heading = 0) {
@@ -833,8 +911,243 @@ function createMiniMapLandmarkIcon() {
   });
 }
 
+function getMinimapRouteKey(userLocation, landmark) {
+  if (!userLocation || !landmark) return "";
+
+  const userLat = Number(userLocation.lat);
+  const userLng = Number(userLocation.lng);
+  const landmarkLat = Number(landmark.lat);
+  const landmarkLng = Number(landmark.lng);
+
+  if (
+    !Number.isFinite(userLat) ||
+    !Number.isFinite(userLng) ||
+    !Number.isFinite(landmarkLat) ||
+    !Number.isFinite(landmarkLng)
+  ) {
+    return "";
+  }
+
+  return [
+    userLat.toFixed(5),
+    userLng.toFixed(5),
+    landmarkLat.toFixed(5),
+    landmarkLng.toFixed(5)
+  ].join(",");
+}
+
+async function fetchOSRMRoute(userLocation, landmark, profile = "foot", signal) {
+  const userLat = Number(userLocation?.lat);
+  const userLng = Number(userLocation?.lng);
+  const landmarkLat = Number(landmark?.lat);
+  const landmarkLng = Number(landmark?.lng);
+
+  if (
+    !Number.isFinite(userLat) ||
+    !Number.isFinite(userLng) ||
+    !Number.isFinite(landmarkLat) ||
+    !Number.isFinite(landmarkLng)
+  ) {
+    throw new Error("Invalid route coordinates.");
+  }
+
+  const coordinates = `${userLng},${userLat};${landmarkLng},${landmarkLat}`;
+  const url =
+    `https://router.project-osrm.org/route/v1/${profile}/${coordinates}` +
+    "?overview=full&geometries=geojson&steps=false";
+
+  console.log("[MINIMAP OSRM] Fetching route:", {
+    profile,
+    user: { lat: userLat, lng: userLng },
+    landmark: { lat: landmarkLat, lng: landmarkLng }
+  });
+
+  const response = await fetch(url, { signal });
+
+  if (!response.ok) {
+    throw new Error(`OSRM request failed: ${response.status}`);
+  }
+
+  const data = await response.json();
+
+  if (data.code !== "Ok" || !data.routes?.length) {
+    throw new Error(`OSRM returned no route: ${data.code || "unknown"}`);
+  }
+
+  const route = data.routes[0];
+
+  if (!route.geometry?.coordinates?.length) {
+    throw new Error("OSRM route has no geometry.");
+  }
+
+  return {
+    distance: route.distance,
+    duration: route.duration,
+    coordinates: route.geometry.coordinates.map(([lng, lat]) => [lat, lng])
+  };
+}
+
+function drawMinimapRoute(routeLatLngs, options = {}) {
+  if (!state.miniMap || !window.L) return;
+
+  if (state.miniMapRouteLine) {
+    state.miniMap.removeLayer(state.miniMapRouteLine);
+    state.miniMapRouteLine = null;
+  }
+
+  if (!Array.isArray(routeLatLngs) || routeLatLngs.length < 2) {
+    console.warn("[MINIMAP OSRM] Not enough route points to draw.");
+    return;
+  }
+
+  state.miniMapRouteLine = L.polyline(routeLatLngs, {
+    color: options.color || "#00B4D8",
+    weight: options.weight || 4,
+    opacity: options.opacity || 0.95,
+    lineCap: "round",
+    lineJoin: "round"
+  }).addTo(state.miniMap);
+
+  try {
+    const bounds = L.latLngBounds(routeLatLngs);
+    state.miniMap.fitBounds(bounds, {
+      padding: [18, 18],
+      maxZoom: 18
+    });
+  } catch (error) {
+    console.warn("[MINIMAP OSRM] Could not fit route bounds:", error);
+  }
+}
+
+function drawMinimapStraightLineFallback(userLocation, landmark) {
+  if (!state.miniMap || !window.L) return;
+
+  const userLat = Number(userLocation?.lat);
+  const userLng = Number(userLocation?.lng);
+  const landmarkLat = Number(landmark?.lat);
+  const landmarkLng = Number(landmark?.lng);
+
+  if (
+    !Number.isFinite(userLat) ||
+    !Number.isFinite(userLng) ||
+    !Number.isFinite(landmarkLat) ||
+    !Number.isFinite(landmarkLng)
+  ) {
+    return;
+  }
+
+  const fallbackLine = [
+    [userLat, userLng],
+    [landmarkLat, landmarkLng]
+  ];
+
+  console.warn("[MINIMAP OSRM] Falling back to straight line.");
+
+  drawMinimapRoute(fallbackLine, {
+    color: "#DDEB9D",
+    weight: 3,
+    opacity: 0.75
+  });
+}
+
+function clearMinimapRoute() {
+  if (state.miniMapRouteLine && state.miniMap) {
+    state.miniMap.removeLayer(state.miniMapRouteLine);
+    state.miniMapRouteLine = null;
+  }
+
+  if (state.miniMapRouteAbortController) {
+    state.miniMapRouteAbortController.abort();
+    state.miniMapRouteAbortController = null;
+  }
+
+  state.lastMiniMapRouteKey = "";
+}
+
+async function updateMinimapOSRMRoute() {
+  if (!state.miniMap || !state.location || !state.selectedLandmark) {
+    clearMinimapRoute();
+    return;
+  }
+
+  const routeKey = getMinimapRouteKey(state.location, state.selectedLandmark);
+
+  if (!routeKey) {
+    clearMinimapRoute();
+    return;
+  }
+
+  const now = Date.now();
+  const routeCooldownMs = 8000;
+
+  if (
+    state.lastMiniMapRouteKey === routeKey &&
+    now - state.lastMiniMapRouteAt < routeCooldownMs
+  ) {
+    return;
+  }
+
+  state.lastMiniMapRouteKey = routeKey;
+  state.lastMiniMapRouteAt = now;
+
+  if (state.miniMapRouteAbortController) {
+    state.miniMapRouteAbortController.abort();
+  }
+
+  state.miniMapRouteAbortController = new AbortController();
+
+  try {
+    let route;
+
+    try {
+      route = await fetchOSRMRoute(
+        state.location,
+        state.selectedLandmark,
+        "foot",
+        state.miniMapRouteAbortController.signal
+      );
+    } catch (footError) {
+      if (footError.name === "AbortError") {
+        throw footError;
+      }
+
+      console.warn("[MINIMAP OSRM] Foot route failed, trying driving:", footError);
+
+      route = await fetchOSRMRoute(
+        state.location,
+        state.selectedLandmark,
+        "driving",
+        state.miniMapRouteAbortController.signal
+      );
+    }
+
+    drawMinimapRoute(route.coordinates, {
+      color: "#00B4D8",
+      weight: 4,
+      opacity: 0.95
+    });
+
+    console.log("[MINIMAP OSRM] Route drawn:", {
+      distanceM: route.distance,
+      durationS: route.duration,
+      points: route.coordinates.length
+    });
+  } catch (error) {
+    if (error.name === "AbortError") {
+      console.log("[MINIMAP OSRM] Route request aborted.");
+      return;
+    }
+
+    console.warn("[MINIMAP OSRM] Route failed, using fallback:", error);
+    drawMinimapStraightLineFallback(state.location, state.selectedLandmark);
+  }
+}
+
 function updateCameraMiniMap() {
-  if (!state.miniMap || !state.selectedLandmark || !state.location) return;
+  if (!state.miniMap || !state.selectedLandmark || !state.location) {
+    clearMinimapRoute();
+    return;
+  }
 
   const now = Date.now();
 
@@ -859,16 +1172,12 @@ function updateCameraMiniMap() {
       landmarkLat,
       landmarkLng
     });
+    clearMinimapRoute();
     return;
   }
 
   const userLatLng = [userLat, userLng];
   const landmarkLatLng = [landmarkLat, landmarkLng];
-
-  if (state.miniMapRouteLine) {
-    state.miniMap.removeLayer(state.miniMapRouteLine);
-    state.miniMapRouteLine = null;
-  }
 
   if (!state.miniMapUserMarker) {
     state.miniMapUserMarker = L.marker(userLatLng, {
@@ -903,13 +1212,13 @@ function updateCameraMiniMap() {
 
   const bounds = L.latLngBounds([userLatLng, landmarkLatLng]).pad(0.45);
 
-  if (bounds.isValid()) {
+  if (bounds.isValid() && !state.miniMapRouteLine) {
     state.miniMap.fitBounds(bounds, {
       animate: true,
       duration: 0.25,
       maxZoom: 18
     });
-  } else {
+  } else if (!bounds.isValid()) {
     state.miniMap.setView(userLatLng, 18);
   }
 
@@ -919,6 +1228,8 @@ function updateCameraMiniMap() {
     accuracy: state.location.accuracy,
     distanceM: state.distanceM
   });
+
+  void updateMinimapOSRMRoute();
 }
 
 function startMiniMapHeadingWatcher() {
@@ -964,59 +1275,66 @@ function updateLocationARAnchor(landmark) {
     `latitude: ${lat}; longitude: ${lng};`
   );
 
-  entity.setAttribute("position", `0 ${LOCATION_AR_CONFIG.heightY} 0`);
+  entity.setAttribute("position", "0 0 0");
+  entity.setAttribute("visible", "false");
+  if (entity.object3D) {
+    entity.object3D.visible = false;
+    entity.object3D.scale.set(1, 1, 1);
+  }
 
   console.log("[LOCATION AR] Anchor set:", {
     name: landmark.name,
     lat,
     lng,
-    heightY: LOCATION_AR_CONFIG.heightY
+    visible: entity.getAttribute("visible")
   });
 }
 
-function placeReadableZoneARToRight() {
+function placeReadableZoneAR() {
   const entity = document.getElementById("readableZoneARContent");
   const cameraEl =
     document.getElementById("gpsCamera") ||
     document.querySelector("[camera]");
 
   if (!entity || !cameraEl || !cameraEl.object3D || !window.THREE) {
-    console.warn("[READABLE AR] Cannot place readable AR yet.");
+    console.warn("[AR PLACE] Cannot place readable AR.", {
+      entity: Boolean(entity),
+      cameraEl: Boolean(cameraEl),
+      cameraObject: Boolean(cameraEl?.object3D),
+      THREE: Boolean(window.THREE)
+    });
     return false;
   }
 
   const cameraObject = cameraEl.object3D;
-
   cameraObject.updateMatrixWorld(true);
 
   const localOffset = new THREE.Vector3(
-    LOCATION_AR_CONFIG.rightOffset,
-    LOCATION_AR_CONFIG.heightY + LOCATION_AR_CONFIG.verticalOffset,
-    -LOCATION_AR_CONFIG.forwardDistance
+    LOCATION_AR_CONFIG.placement.x,
+    LOCATION_AR_CONFIG.placement.y,
+    LOCATION_AR_CONFIG.placement.z
   );
 
-  const targetPosition = localOffset.clone();
-  cameraObject.localToWorld(targetPosition);
+  const worldPosition = localOffset.clone();
+  cameraObject.localToWorld(worldPosition);
 
-  entity.object3D.position.copy(targetPosition);
+  entity.object3D.position.copy(worldPosition);
   entity.object3D.rotation.set(0, 0, 0);
+  entity.object3D.scale.set(1, 1, 1);
   entity.object3D.updateMatrixWorld(true);
 
-  console.log("[READABLE AR] Placed using camera local offset:", {
+  console.log("[AR PLACE] Readable AR placed using modular config:", {
     localOffset: {
       x: localOffset.x,
       y: localOffset.y,
       z: localOffset.z
     },
     worldPosition: {
-      x: targetPosition.x,
-      y: targetPosition.y,
-      z: targetPosition.z
+      x: worldPosition.x,
+      y: worldPosition.y,
+      z: worldPosition.z
     },
-    rightOffset: LOCATION_AR_CONFIG.rightOffset,
-    forwardDistance: LOCATION_AR_CONFIG.forwardDistance,
-    heightY: LOCATION_AR_CONFIG.heightY,
-    verticalOffset: LOCATION_AR_CONFIG.verticalOffset
+    config: JSON.parse(JSON.stringify(LOCATION_AR_CONFIG))
   });
 
   return true;
@@ -1028,171 +1346,114 @@ function hideLocationBasedARContent() {
     document.getElementById("locationBasedARContent");
 
   entity?.setAttribute("visible", "false");
+  if (entity?.object3D) {
+    entity.object3D.visible = false;
+    entity.object3D.scale.set(1, 1, 1);
+  }
 
   const readableEntity =
     DOM.readableZoneARContent ||
     document.getElementById("readableZoneARContent");
 
   readableEntity?.setAttribute("visible", "false");
+  if (readableEntity?.object3D) {
+    readableEntity.object3D.visible = false;
+    readableEntity.object3D.scale.set(1, 1, 1);
+  }
+
+  const cameraFixedEntity = document.getElementById("cameraFixedARContent");
+  cameraFixedEntity?.setAttribute("visible", "false");
+  if (cameraFixedEntity?.object3D) {
+    cameraFixedEntity.object3D.visible = false;
+  }
+
   state.readableARPlaced = false;
 }
 
 function buildARContentInto(targetEntityId, landmark) {
   const entity = document.getElementById(targetEntityId);
 
-  if (!entity || !landmark) return;
+  if (!entity || !landmark) {
+    console.error("[AR BUILD] Missing AR target or landmark.", {
+      targetEntityId,
+      entityExists: Boolean(entity),
+      landmarkExists: Boolean(landmark)
+    });
+    return;
+  }
 
-  const name = landmark.name || "Landmark";
-  const image = landmark.image || "assets/images/default-landmark.jpg";
+  const safeId = String(landmark.id || landmark.firestoreId || "landmark")
+    .replace(/[^a-z0-9_-]/gi, "-");
 
-  const history = limitARText(
-    landmark.history ||
-      landmark.desc ||
-      landmark.description ||
-      "Historical information will appear here.",
-    170
-  );
+  const targetSafeId = String(targetEntityId || "ar-target")
+    .replace(/[^a-z0-9_-]/gi, "-");
 
-  const description = limitARText(
-    landmark.description ||
-      landmark.desc ||
-      landmark.history ||
-      "Explore this landmark through KA-KALAKBAY.",
-    210
-  );
+  const cardAssetId = `ar-card-${targetSafeId}-${safeId}`;
+  const cardCanvas = createARInfoCardTexture(cardAssetId, landmark);
 
-  const safeId = String(landmark.id || "landmark").replace(/[^a-z0-9_-]/gi, "-");
-  const targetSafeId = String(targetEntityId || "ar-target").replace(
-    /[^a-z0-9_-]/gi,
-    "-"
-  );
+  registerCanvasAsset(cardAssetId, cardCanvas);
 
-  const titleAssetId = `ar-title-${targetSafeId}-${safeId}`;
-  const historyAssetId = `ar-history-${targetSafeId}-${safeId}`;
-  const descAssetId = `ar-desc-${targetSafeId}-${safeId}`;
+  const { width, height, scale } = LOCATION_AR_CONFIG.card;
 
-  const titleCanvas = createTextTexture(titleAssetId, {
-    width: 1200,
-    height: 220,
-    background: "#FFFFFF",
-    body: name.toUpperCase(),
-    bodyColor: "#0A1628",
-    bodySize: 70,
-    bodyWeight: 900,
-    padding: 48,
-    radius: 40,
-    align: "center"
-  });
-
-  const historyCanvas = createTextTexture(historyAssetId, {
-    width: 900,
-    height: 820,
-    background: "#DDEB9D",
-    title: "HISTORY",
-    body: history,
-    titleColor: "#0A1628",
-    bodyColor: "#0A1628",
-    titleSize: 58,
-    bodySize: 42,
-    padding: 58,
-    radius: 44,
-    align: "center"
-  });
-
-  const descCanvas = createTextTexture(descAssetId, {
-    width: 1200,
-    height: 300,
-    background: "#0A1628",
-    body: description,
-    bodyColor: "#FFFFFF",
-    bodySize: 42,
-    padding: 54,
-    radius: 40,
-    align: "center"
-  });
-
-  registerCanvasAsset(titleAssetId, titleCanvas);
-  registerCanvasAsset(historyAssetId, historyCanvas);
-  registerCanvasAsset(descAssetId, descCanvas);
+  entity.object3D?.scale.set(1, 1, 1);
 
   entity.innerHTML = `
     <a-entity
       id="${targetEntityId}BillboardRoot"
       position="0 0 0"
       rotation="0 0 0"
-      face-camera-y="enabled: true; flip: ${LOCATION_AR_CONFIG.billboardFlip}"
+      face-camera-y="enabled: ${LOCATION_AR_CONFIG.billboard.enabled}; flip: ${LOCATION_AR_CONFIG.billboard.flip}"
     >
       <a-entity
         id="${targetEntityId}CardRoot"
         position="0 0 0"
         rotation="0 0 0"
-        scale="${LOCATION_AR_CONFIG.baseScale} ${LOCATION_AR_CONFIG.baseScale} ${LOCATION_AR_CONFIG.baseScale}"
+        scale="${scale} ${scale} ${scale}"
       >
-        <!-- ROW 1: LANDMARK NAME -->
         <a-plane
-          position="0 1.55 0"
-          width="3.6"
-          height="0.65"
-          material="src: #${titleAssetId}; transparent: true; side: double;"
-        ></a-plane>
-
-        <!-- ROW 2 LEFT: GALLERY CARD BACKGROUND -->
-        <a-plane
-          position="-0.95 0.45 0"
-          width="1.7"
-          height="1.55"
-          color="#27667B"
-          material="opacity: 0.98; transparent: true; side: double;"
-        ></a-plane>
-
-        <!-- ROW 2 LEFT: IMAGE -->
-        <a-plane
-          position="-0.95 0.35 0.06"
-          width="1.35"
-          height="0.95"
-          material="src: url(${image}); transparent: true; side: double;"
-        ></a-plane>
-
-        <!-- ROW 2 RIGHT: HISTORY -->
-        <a-plane
-          position="0.95 0.45 0"
-          width="1.7"
-          height="1.55"
-          material="src: #${historyAssetId}; transparent: true; side: double;"
-        ></a-plane>
-
-        <!-- ROW 3: DESCRIPTION -->
-        <a-plane
-          position="0 -0.85 0"
-          width="3.6"
-          height="0.9"
-          material="src: #${descAssetId}; transparent: true; side: double;"
+          id="${targetEntityId}SingleCardPlane"
+          position="0 0 0"
+          width="${width}"
+          height="${height}"
+          material="src: #${cardAssetId}; transparent: true; side: double;"
         ></a-plane>
       </a-entity>
     </a-entity>
   `;
 
-  console.log("[AR DISPLAY] Built readable canvas-texture AR content:", {
-    targetEntityId,
-    name,
-    image,
-    history,
-    description
+  requestAnimationFrame(() => {
+    const cardRoot = document.getElementById(`${targetEntityId}CardRoot`);
+    const cardPlane = document.getElementById(`${targetEntityId}SingleCardPlane`);
+
+    console.log("[AR BUILD] Modular one-plane AR card built:", {
+      targetEntityId,
+      landmark: landmark.name,
+      cardAssetId,
+      cardScale: scale,
+      planeWidth: width,
+      planeHeight: height,
+      cardRootScaleAttr: cardRoot?.getAttribute("scale"),
+      cardRootObjectScale: {
+        x: cardRoot?.object3D?.scale?.x,
+        y: cardRoot?.object3D?.scale?.y,
+        z: cardRoot?.object3D?.scale?.z
+      },
+      planeWidthAttr: cardPlane?.getAttribute("width"),
+      planeHeightAttr: cardPlane?.getAttribute("height"),
+      parentScale: {
+        x: entity.object3D?.scale?.x,
+        y: entity.object3D?.scale?.y,
+        z: entity.object3D?.scale?.z
+      },
+      children: entity.children?.length || 0
+    });
   });
-  console.log("[AR DISPLAY] Fixed base scale:", LOCATION_AR_CONFIG.baseScale);
-  console.log("[AR DISPLAY] No distance-based scaling active.");
-  console.log("[AR DISPLAY] Target anchor controls position:", targetEntityId);
-  console.log("[AR DISPLAY] Billboard root controls rotation.");
-  console.log("[AR DISPLAY] Card root controls scale.");
 }
 
 function buildLocationARContent(landmark) {
-  if (LOCATION_AR_CONFIG.useReadableZoneAnchor) {
-    buildARContentInto("readableZoneARContent", landmark);
-    return;
-  }
+  console.log("[AR BUILD] Building modular AR content into readableZoneARContent.");
 
-  buildARContentInto("locationBasedARContent", landmark);
+  buildARContentInto("readableZoneARContent", landmark);
 }
 
 function showNavigationUI() {
@@ -1226,74 +1487,69 @@ function showARReadyUI() {
 }
 
 function updateLocationARVisibility() {
-  const gpsEntity =
-    DOM.locationARContent ||
-    document.getElementById("locationBasedARContent");
-  const readableEntity =
-    DOM.readableZoneARContent ||
-    document.getElementById("readableZoneARContent");
-
-  if (!gpsEntity && !readableEntity) return;
+  const gpsEntity = document.getElementById("locationBasedARContent");
+  const readableEntity = document.getElementById("readableZoneARContent");
+  const cameraFixedEntity = document.getElementById("cameraFixedARContent");
 
   const canShow =
     Boolean(state.selectedLandmark) &&
     Boolean(state.location) &&
     state.inRange === true;
 
-  if (LOCATION_AR_CONFIG.useReadableZoneAnchor) {
-    gpsEntity?.setAttribute("visible", "false");
+  gpsEntity?.setAttribute("visible", "false");
+  cameraFixedEntity?.setAttribute("visible", "false");
 
-    if (canShow) {
-      if (!state.readableARPlaced) {
-        const placed = placeReadableZoneARToRight();
-
-        if (placed) {
-          state.readableARPlaced = true;
-        }
-      }
-
-      readableEntity?.setAttribute("visible", "true");
-    } else {
-      readableEntity?.setAttribute("visible", "false");
-      state.readableARPlaced = false;
-    }
-
-    state.arVisible = canShow;
-
-    if (canShow) {
-      showARReadyUI();
-      unlockSelectedLandmark();
-    } else {
-      showNavigationUI();
-    }
-
-    console.log("[READABLE AR] Visibility:", {
-      canShow,
-      placed: state.readableARPlaced,
-      distanceM: state.distanceM
-    });
-
-    return;
+  if (gpsEntity?.object3D) {
+    gpsEntity.object3D.visible = false;
   }
 
-  gpsEntity?.setAttribute("visible", canShow ? "true" : "false");
-  readableEntity?.setAttribute("visible", "false");
-  state.arVisible = canShow;
+  if (cameraFixedEntity?.object3D) {
+    cameraFixedEntity.object3D.visible = false;
+  }
 
   if (canShow) {
+    if (!state.readableARPlaced) {
+      const placed = placeReadableZoneAR();
+      if (placed) state.readableARPlaced = true;
+    }
+
+    readableEntity?.setAttribute("visible", "true");
+    if (readableEntity?.object3D) {
+      readableEntity.object3D.visible = true;
+      readableEntity.object3D.scale.set(1, 1, 1);
+    }
+
+    state.arVisible = true;
     showARReadyUI();
     unlockSelectedLandmark();
   } else {
+    readableEntity?.setAttribute("visible", "false");
+
+    if (readableEntity?.object3D) {
+      readableEntity.object3D.visible = false;
+    }
+
+    state.readableARPlaced = false;
+    state.arVisible = false;
     showNavigationUI();
   }
 
-  console.log("[LOCATION AR] Visibility:", {
+  console.log("[AR VISIBILITY] Modular AR status:", {
     canShow,
+    selectedLandmark: Boolean(state.selectedLandmark),
+    location: Boolean(state.location),
     inRange: state.inRange,
-    distanceM: state.distanceM
+    readableExists: Boolean(readableEntity),
+    readableVisibleAttr: readableEntity?.getAttribute("visible"),
+    readableChildren: readableEntity?.children?.length || 0,
+    readableParentScale: {
+      x: readableEntity?.object3D?.scale?.x,
+      y: readableEntity?.object3D?.scale?.y,
+      z: readableEntity?.object3D?.scale?.z
+    },
+    readableARPlaced: state.readableARPlaced,
+    arVisible: state.arVisible
   });
-  console.log("[AR DISPLAY] Distance:", state.distanceM);
-  console.log("[AR DISPLAY] Fallback GPS anchor controls position.");
 }
 
 function updateGeofenceState() {
@@ -1442,10 +1698,14 @@ function startGPSWatcher() {
 }
 
 function stopGPSWatcher() {
-  if (!state.watchId) return;
+  if (!state.watchId) {
+    clearMinimapRoute();
+    return;
+  }
 
   navigator.geolocation.clearWatch(state.watchId);
   state.watchId = null;
+  clearMinimapRoute();
 }
 
 function waitForSceneThenStartGPS() {
@@ -1498,9 +1758,7 @@ function closeInfoPanel() {
 }
 
 function recenterReadableAR() {
-  if (!LOCATION_AR_CONFIG.useReadableZoneAnchor) return;
-
-  const placed = placeReadableZoneARToRight();
+  const placed = placeReadableZoneAR();
 
   if (placed) {
     state.readableARPlaced = true;
@@ -1694,9 +1952,7 @@ async function handleCapture() {
     return;
   }
 
-  const arEntity = LOCATION_AR_CONFIG.useReadableZoneAnchor
-    ? document.getElementById("readableZoneARContent")
-    : document.getElementById("locationBasedARContent");
+  const arEntity = document.getElementById("readableZoneARContent");
   state.captureBusy = true;
   DOM.captureBtn?.classList.add("is-capturing");
 
@@ -1734,12 +1990,8 @@ function goBack() {
 }
 
 function bindEvents() {
-  document.querySelectorAll("[data-action='back']").forEach((button) => {
+  document.querySelectorAll("[data-action='back'], .back-btn, .missing-back").forEach((button) => {
     button.addEventListener("click", goBack);
-  });
-
-  document.querySelectorAll(".back-btn, .missing-back").forEach((link) => {
-    link.addEventListener("click", stopGPSWatcher);
   });
 
   let infoLongPressTimer = null;
@@ -1824,7 +2076,7 @@ async function initCameraPage() {
     cacheDOM();
     applyAccessibilitySettings();
     registerBillboardComponent();
-    applyReadableARPlacementFromURL();
+    applyARDisplayOverridesFromURL();
     logARCalibrationStatus();
     console.log("[AR MODE]", "Coordinate-based AR");
 
@@ -1865,7 +2117,9 @@ async function initCameraPage() {
     showARSafetyModalIfNeeded();
 
     buildLocationARContent(state.selectedLandmark);
+    state.readableARPlaced = false;
     updateLocationARAnchor(state.selectedLandmark);
+    updateLocationARVisibility();
 
     DOM.hud?.classList.add("active");
     DOM.bottomBar?.classList.add("active");

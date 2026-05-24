@@ -36,6 +36,10 @@ export async function getLandmarkById(landmarkId) {
 }
 
 export function normalizeLandmark(data = {}) {
+  const arInfo = Array.isArray(data.arInfo)
+    ? data.arInfo.map((item) => String(item || "").trim()).filter(Boolean)
+    : [];
+
   return {
     id: data.id || data.firestoreId,
     firestoreId: data.firestoreId || data.id,
@@ -46,6 +50,7 @@ export function normalizeLandmark(data = {}) {
     desc: data.desc || data.description || "",
     description: data.description || data.desc || "",
     history: data.history || data.desc || data.description || "",
+    arInfo,
     image: data.image || "",
     lat: Number(data.lat),
     lng: Number(data.lng),
